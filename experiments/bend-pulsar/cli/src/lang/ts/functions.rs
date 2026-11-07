@@ -17,7 +17,9 @@ use oxc_syntax::scope::ScopeFlags;
 
 use super::calls::{join, CatalogIndex, Use};
 use crate::catalog::{Arg, Via};
-use crate::lang::functions::{ct, ctx, fk, fnv_parts, op, shape, CoRec, CtRec, FileFns, FnRec, Site, SiteKind};
+use crate::lang::functions::{
+    ct, ctx, fk, fnv_parts, op, shape, CoRec, CtRec, FileFns, FnRec, Site, SiteKind, SqlTextKind, SqlTextRec,
+};
 use oxc_semantic::Scoping;
 use oxc_syntax::reference::ReferenceId;
 use oxc_syntax::symbol::SymbolId;
@@ -483,6 +485,29 @@ impl<'s> Walker<'s> {
         self.out.sites.push(Site { fn_local, kind: SiteKind::Call { sym: id, loop_depth, ctx: c } });
     }
 
+    fn is_query(&self, sym: &str) -> bool {
+        self.index.is_some_and(|ix| ix.classes(sym).contains(&1))
+    }
+
+    /// The SQL text of a query-class call: its first argument.
+    fn sql_call(&mut self, sym: &str, args: &[Argument<'_>], span: Span) {
+        if !self.is_query(sym) {
+            return;
+        }
+        let (kind, text) = match args.first().and_then(|a| a.as_expression()).map(|e| e.get_inner_expression()) {
+            Some(Expression::StringLiteral(l)) => (SqlTextKind::Literal, l.value.display().to_string()),
+            Some(Expression::TemplateLiteral(t)) => template_text(t),
+            _ => (SqlTextKind::Dynamic, String::new()),
+        };
+        self.push_sql(span, kind, text);
+    }
+
+    fn push_sql(&mut self, span: Span, kind: SqlTextKind, text: String) {
+        let fn_local = self.frames.last().map(|f| f.local);
+        let line = self.lines.line(span.start);
+        self.out.sql.push(SqlTextRec { fn_local, line, text, kind });
+    }
+
     fn handler_site(&mut self, shape: u8) {
         let Some(f) = self.frames.last() else { return };
         let fn_local = f.local;
@@ -874,6 +899,7 @@ impl<'s> Walker<'s> {
         }
         if ix.entries(&sym).iter().any(|e| e.via == Via::Result && e.use_ == Use::Call) {
             self.call_site(&sym);
+            self.sql_call(&sym, &it.arguments, it.span);
         }
     }
 
@@ -885,11 +911,13 @@ impl<'s> Walker<'s> {
             Target::Bound(sid) => {
                 if let Some(sym) = self.bound_use(sid, &c.path, false) {
                     self.call_site(&sym);
+                    self.sql_call(&sym, &it.arguments, it.span);
                 }
             }
             Target::Held { sym, via, rest } => {
                 if let Some(sym) = self.use_of(&sym, via, &rest, false) {
                     self.call_site(&sym);
+                    self.sql_call(&sym, &it.arguments, it.span);
                 }
             }
             Target::None => {}
@@ -900,6 +928,7 @@ impl<'s> Walker<'s> {
         let Some(ix) = self.index else { return };
         if self.has_via(sym, Via::Call) {
             self.call_site(sym);
+            self.sql_call(sym, &it.arguments, it.span);
         }
         if let Some(w) = ix.wrapper(sym) {
             self.wrap_args(&it.arguments, w.ctx);
@@ -962,6 +991,19 @@ fn import_binding(sp: &ImportDeclarationSpecifier<'_>) -> Option<(SymbolId, Opti
         }
         ImportDeclarationSpecifier::ImportNamespaceSpecifier(i) => Some((i.local.symbol_id.get()?, None)),
     }
+}
+
+/// A template literal as SQL: quasis joined with `?` for each `${expr}`.
+fn template_text(t: &TemplateLiteral<'_>) -> (SqlTextKind, String) {
+    let mut text = String::new();
+    for (i, q) in t.quasis.iter().enumerate() {
+        if i > 0 {
+            text.push('?');
+        }
+        text.push_str(q.value.raw.as_str());
+    }
+    let kind = if t.expressions.is_empty() { SqlTextKind::Literal } else { SqlTextKind::Template };
+    (kind, text)
 }
 
 /// The unlabelled `break` that ends a switch case, looking through one level of block.
@@ -1279,6 +1321,10 @@ impl<'a> Visit<'a> for Walker<'_> {
     fn visit_tagged_template_expression(&mut self, it: &TaggedTemplateExpression<'a>) {
         if let Some(sym) = self.tag_use(&it.tag) {
             self.call_site(&sym);
+            if self.is_query(&sym) {
+                let (kind, text) = template_text(&it.quasi);
+                self.push_sql(it.span, kind, text);
+            }
         }
         walk::walk_tagged_template_expression(self, it);
     }

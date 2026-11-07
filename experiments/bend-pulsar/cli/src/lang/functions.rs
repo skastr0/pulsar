@@ -109,6 +109,27 @@ pub struct Site {
     pub kind: SiteKind,
 }
 
+/// How a query call's SQL text is known.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SqlTextKind {
+    /// A string literal, or a template with no interpolation.
+    Literal,
+    /// A template with interpolation: each `${expr}` is a `?` in the text.
+    Template,
+    /// Neither (a variable or a concatenation): the text is empty.
+    Dynamic,
+}
+
+/// The first argument of a query-class call (or the body of a query-class tagged template).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SqlTextRec {
+    /// Enclosing function, as a local index; `None` at module level.
+    pub fn_local: Option<u32>,
+    pub line: u32,
+    pub text: String,
+    pub kind: SqlTextKind,
+}
+
 #[derive(Debug, Default)]
 pub struct FileFns {
     pub fns: Vec<FnRec>,
@@ -118,6 +139,8 @@ pub struct FileFns {
     /// Symbols this file's call sites name, deduplicated, in first-use order.
     pub syms: Vec<String>,
     pub sites: Vec<Site>,
+    /// SQL texts of query-class calls, in source order.
+    pub sql: Vec<SqlTextRec>,
 }
 
 /// FNV-1a 64 over parts separated by a zero byte (same constants as the file key).

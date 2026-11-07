@@ -8,7 +8,7 @@ mod extract;
 pub mod functions;
 mod resolve;
 
-use crate::lang::functions::FileFns;
+use crate::lang::functions::{FileFns, SqlTextKind};
 use crate::lang::scope::is_test;
 use crate::lang::FileOut;
 #[allow(unused_imports)]
@@ -30,6 +30,19 @@ pub struct Stats {
     pub catalogs: Vec<String>,
 }
 
+/// The SQL text of a query-class call (the first argument), for the SQL lane.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SqlText {
+    /// Global file id.
+    pub file: u32,
+    /// Enclosing function, as a local index within the file; `None` at module level.
+    pub fn_local: Option<u32>,
+    pub line: u32,
+    /// Empty for `Dynamic`; `${expr}` is `?` in a `Template`.
+    pub text: String,
+    pub kind: SqlTextKind,
+}
+
 #[derive(Default)]
 pub struct Analysis {
     /// Indexed like the `files` argument.
@@ -40,6 +53,8 @@ pub struct Analysis {
     pub u: Vec<[u32; 2]>,
     /// Catalog classes of every symbol the files' call sites name, for `CL`.
     pub sym_classes: std::collections::BTreeMap<String, Vec<u32>>,
+    /// SQL texts of query-class calls, in (file, source) order.
+    pub sql_texts: Vec<SqlText>,
     pub stats: Stats,
 }
 
@@ -100,8 +115,19 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
             sym_classes.entry(name.clone()).or_insert_with(|| index.classes(name));
         }
     }
+    let mut sql_texts = Vec::new();
+    for (idx, p) in per.iter_mut().enumerate() {
+        let file = files[idx].0;
+        sql_texts.extend(std::mem::take(&mut p.fns.sql).into_iter().map(|r| SqlText {
+            file,
+            fn_local: r.fn_local,
+            line: r.line,
+            text: r.text,
+            kind: r.kind,
+        }));
+    }
     let per_file = per.iter_mut().map(|p| FileOut { fns: std::mem::take(&mut p.fns), tests: Vec::new() }).collect();
-    Ok(Analysis { per_file, i: i_rows, u: u_rows, sym_classes, stats: st })
+    Ok(Analysis { per_file, i: i_rows, u: u_rows, sym_classes, sql_texts, stats: st })
 }
 
 /// Parse every file in parallel, one AST at a time per thread, and resolve its imports.

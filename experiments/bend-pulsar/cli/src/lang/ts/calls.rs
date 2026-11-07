@@ -228,4 +228,26 @@ mod fixtures {
         }
         assert!(seen >= 4, "fixtures missing: saw {seen}");
     }
+
+    /// The SQL text the SQL lane receives: literal, template with `?` for each hole, or dynamic.
+    #[test]
+    fn query_call_texts_are_literal_template_or_dynamic() {
+        use crate::lang::functions::SqlTextKind::{Dynamic, Literal, Template};
+        let src = "import { SqlClient } from \"@effect/sql\";\nexport const q = (sql: SqlClient.SqlClient) => {\n  sql`select * from t where id = ${1} and k = ${2}`;\n  sql`select 1`;\n  sql.unsafe(\"select 2\");\n  sql.unsafe(build());\n  sql.unsafe(`select ${x}`);\n  other(\"not sql\");\n};\n";
+        let alloc = Allocator::default();
+        let ex = extract(&alloc, "q.ts", Path::new("q.ts"), src, &all_index(), false, None);
+        let got: Vec<(_, u32, &str)> =
+            ex.functions.sql.iter().map(|r| (r.kind, r.line, r.text.as_str())).collect();
+        assert_eq!(
+            got,
+            [
+                (Template, 3, "select * from t where id = ? and k = ?"),
+                (Literal, 4, "select 1"),
+                (Literal, 5, "select 2"),
+                (Dynamic, 6, ""),
+                (Template, 7, "select ?"),
+            ]
+        );
+        assert!(ex.functions.sql.iter().all(|r| r.fn_local == Some(0)));
+    }
 }
