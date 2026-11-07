@@ -10,6 +10,7 @@ mod history;
 mod lang;
 mod packs;
 mod policy;
+mod sql;
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
