@@ -95,6 +95,9 @@ pub fn run_raw(engine: &Path, facts: &Path) -> Result<String, String> {
 pub fn parse(text: &str) -> Result<Findings, String> {
     let mut f = Findings { cycles: vec![], cert: None, files: 0, edges: 0, cycle_count: 0, fm: vec![], fx: vec![], rcx: vec![] };
     let mut header = false;
+    // Rows are parsed only inside the sections this reader consumes; a `pulsar-*`
+    // header for any other section switches skipping on until the next header.
+    let mut section = "";
     let num = |s: &str| s.parse::<u64>().map_err(|_| format!("bad number {s:?} in engine output"));
     for line in text.lines() {
         let line = line.trim();
@@ -102,8 +105,21 @@ pub fn parse(text: &str) -> Result<Findings, String> {
             continue;
         }
         let mut it = line.split_whitespace();
-        match it.next().unwrap() {
-            "pulsar-findings" => header = true,
+        let tag = it.next().unwrap();
+        if let Some(name) = tag.strip_prefix("pulsar-") {
+            section = match name {
+                "findings" | "classctx" => name,
+                _ => "other",
+            };
+            if section == "findings" {
+                header = true;
+            }
+            continue;
+        }
+        if section.is_empty() || section == "other" {
+            continue;
+        }
+        match tag {
             "CYC" => {
                 let size = num(it.next().ok_or("CYC without size")?)? as usize;
                 let ids = it.map(|s| num(s).map(|v| v as u32)).collect::<Result<Vec<_>, _>>()?;
@@ -139,7 +155,6 @@ pub fn parse(text: &str) -> Result<Findings, String> {
                     .collect::<Result<Vec<_>, _>>()?;
                 f.fx.push(Fx { rule, fn_id, value, threshold, extra });
             }
-            "pulsar-classctx" => {}
             "RCX" => {
                 let mut n = || num(it.next().ok_or("RCX needs rule site fn callee")?).map(|v| v as u32);
                 let (rule, site, fn_id, callee) = (n()?, n()?, n()?, n()?);
