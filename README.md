@@ -39,7 +39,7 @@ git add .pulsar && git commit -m "chore: pulsar policy"
 - **The history window**, with the number of commits it holds, and a warning on a shallow clone.
 - **Packs**, reported and not listed: a pack switches on by itself from evidence (`effect` in a `package.json`, a `wrangler.jsonc`), and the comment names the file that triggered it.
 
-`init` never turns a rule on. Opt-in rules, and the Effect scope lists that decide where the Effect scope rules fire, change which findings appear, so they stay as commented suggestions. It refuses to overwrite an existing policy (`--force` replaces it, `--print` shows what it would write).
+`init` never turns a rule on. Opt-in rules, and the Effect scope lists that decide where the Effect scope rules fire, change which findings appear, so it leaves them to you: it names the opt-in rules in a comment, and when a package other than the root depends on `effect` it lists that package's directory as a commented `[packs.effect] effect_only` suggestion. When only the root package depends on `effect`, it writes no `[packs.effect]` block at all: set `effect_only` and `boundary` by hand. It also cannot tell which root-level directory is the product: with a root `tsconfig.json` it covers the whole repo, so narrow `[lanes.ts] include` yourself. It refuses to overwrite an existing policy (`--force` replaces it, `--print` shows what it would write).
 
 ## Daily commands
 
