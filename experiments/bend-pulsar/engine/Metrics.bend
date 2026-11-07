@@ -14,7 +14,8 @@
 #               A branch's else arm holding only a branch (`else if`) adds no level.
 #   npath       Nejmeh (CACM 1988): a sequence multiplies; a branch sums its arms
 #               plus an implicit empty one when it has a single arm; a
-#               multi-branch sums its arms plus one when it has no default; a
+#               multi-branch sums its arms plus one when it has no default (or
+#               no arm at all); a
 #               loop is its body + 1; a try is (body + catches) x finally; each
 #               short-circuit that is a child of a guard adds one. Computed in
 #               Nat and capped at Metrics.cap() = 2^24 - 1: Bend's runtime holds
@@ -299,7 +300,7 @@ def Np.val(k: K, prod: Nat, sum: Nat, arms: Nat, sc: Nat, dflt: Nat, +fin: Nat, 
     case KBranch{}:
       Sat.add(Sat.add(sum, Nat.sub(2n, arms), cap), sc, cap)
     case KMulti{}:
-      Sat.add(Sat.add(sum, Nat.sub(1n, dflt), cap), sc, cap)
+      Sat.add(Sat.add(sum, Nat.sub(1n, Nat.min(dflt, arms)), cap), sc, cap)
     case KLoop{}:
       Sat.add(Sat.add(prod, 1n, cap), sc, cap)
     case KTry{}:

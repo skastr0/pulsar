@@ -11,6 +11,7 @@
 
 import Base
 import ./Metrics.bend as M
+import ./Metrics-NAT.bend as N
 
 # ---- describing inputs and outputs ---------------------------------------------------------------
 def And(-A: Data, -B: Data) -> Data:
@@ -304,3 +305,153 @@ law nesting_else_if_is_flat:
   for +a: M.Ct
   for +b: M.Ct
   {M.Nest.of(M.Node{M.KBranch{}, M.Node{M.KArm{}, a, M.Node{M.KArm{}, M.Node{M.KBranch{}, b, M.Leaf{}}, M.Leaf{}}}, M.Leaf{}}) == 1n+Nat.max(M.Nest.seq(a, M.MAny{}), M.Nest.seq(b, M.MPre{})) : Nat}
+
+# ---- N. NPath ---------------------------------------------------------------------------------
+# Npx is Nejmeh's recurrence written plainly, in exact Nat with no cap. It is a
+# reference: the binary never calls it. Law N1 says the shipped Np.agg is Npx
+# with the cap applied to each NPath it carries.
+#
+#   sequence      the product of its statements
+#   branch        sum of the arms + an implicit empty arm when there are fewer
+#                 than two + one per short-circuit in its guard
+#   multi-branch  sum of the arms + 1 when there is no default (or no arm)
+#                 + one per short-circuit
+#   loop          its body + 1 + one per short-circuit
+#   try           (body + catches) x finally
+#   anything else one path; a nested function's subtree is not read
+def Npx.val(k: M.K, prod: Nat, sum: Nat, arms: Nat, sc: Nat, dflt: Nat, fin: Nat) -> Nat:
+  match k:
+    case M.KBranch{}:
+      Nat.add(Nat.add(sum, Nat.sub(2n, arms)), sc)
+    case M.KMulti{}:
+      Nat.add(Nat.add(sum, Nat.sub(1n, Nat.min(dflt, arms))), sc)
+    case M.KLoop{}:
+      Nat.add(Nat.add(prod, 1n), sc)
+    case M.KTry{}:
+      Nat.mul(Nat.add(sum, Nat.sub(1n, arms)), fin)
+    case M.KArm{}:
+      prod
+    case _:
+      1n
+
+def Npx.value(k: M.K, a: M.Agg) -> Nat:
+  match a:
+    case M.Agg{prod, sum, arms, sc, dflt, fin}:
+      Npx.val(k, prod, sum, arms, sc, dflt, fin)
+
+# What an arm adds to its parent's sum of arms, and what a finally arm multiplies.
+def Npx.armv(k: M.K, ap: Nat) -> Nat:
+  match k:
+    case M.KArm{}:
+      ap
+    case _:
+      0n
+
+def Npx.fin_of(k: M.K, ap: Nat) -> Nat:
+  match k:
+    case M.KFin{}:
+      ap
+    case _:
+      1n
+
+def Npx.cons(+k: M.K, +a: M.Agg, r: M.Agg) -> M.Agg:
+  match a r:
+    case M.Agg{+ap, as, an, asc, ad, af} M.Agg{rp, rs, rn, rsc, rd, rf}:
+      M.Agg{Nat.mul(Npx.value(k, M.Agg{ap, as, an, asc, ad, af}), rp), Nat.add(Npx.armv(k, ap), rs), Nat.add(M.K.arm(k), rn), Nat.add(M.K.sc(k), rsc), Nat.add(M.K.flag(k), rd), Nat.mul(Npx.fin_of(k, ap), rf)}
+
+def Npx.empty() -> M.Agg:
+  M.Agg{1n, 0n, 0n, 0n, 0n, 1n}
+
+def Npx.kids(k: M.K, a: M.Agg) -> M.Agg:
+  match k:
+    case M.KFn{}:
+      Npx.empty()
+    case _:
+      a
+
+def Npx.agg(t: M.Ct) -> M.Agg:
+  match t:
+    case M.Leaf{}:
+      Npx.empty()
+    case M.Node{+k, kids, next}:
+      Npx.cons(k, Npx.kids(k, Npx.agg(kids)), Npx.agg(next))
+
+def Npx.of(t: M.Ct) -> Nat:
+  M.Np.prod(Npx.agg(t))
+
+# The cap applied to each NPath an Agg carries; the counts are untouched.
+def Cap(a: M.Agg, +c: Nat) -> M.Agg:
+  match a:
+    case M.Agg{prod, sum, arms, sc, dflt, fin}:
+      M.Agg{Nat.min(prod, c), Nat.min(sum, c), arms, sc, dflt, Nat.min(fin, c)}
+
+# N1. the shipped NPath is Nejmeh's recurrence, capped, on every tree and cap.
+law npath_is_nejmeh_capped:
+  for +t: M.Ct
+  for +cap: Nat
+  {M.Np.agg(t, cap) == Cap(Npx.agg(t), cap) : M.Agg}
+
+# N2. so the printed NPath is min(Nejmeh's NPath, cap).
+law npath_printed_is_min:
+  for +t: M.Ct
+  for +cap: Nat
+  {M.Np.of(t, cap) == Nat.min(Npx.of(t), cap) : Nat}
+
+# N3. the NPath of a sequence is the product of its parts.
+law npath_sequence_is_product:
+  for +a: M.Ct
+  for +b: M.Ct
+  {Npx.of(Ct.cat(a, b)) == Nat.mul(Npx.of(a), Npx.of(b)) : Nat}
+
+# N4. and the printed one is that product, capped.
+law npath_printed_sequence:
+  for +a: M.Ct
+  for +b: M.Ct
+  for +cap: Nat
+  {M.Np.of(Ct.cat(a, b), cap) == Nat.min(Nat.mul(Npx.of(a), Npx.of(b)), cap) : Nat}
+
+# N5. every function has at least one path.
+law npath_at_least_one:
+  for +t: M.Ct
+  N.Le(1n, Npx.of(t))
+
+# N6-N8. adding an arm to a branch, a multi-branch or a try never lowers the
+# printed NPath (the arm goes first among the children; their order does not matter).
+law npath_arm_monotone_branch:
+  for +body: M.Ct
+  for +kids: M.Ct
+  for +next: M.Ct
+  for +cap: Nat
+  N.Le(M.Np.of(M.Node{M.KBranch{}, kids, next}, cap), M.Np.of(M.Node{M.KBranch{}, M.Node{M.KArm{}, body, kids}, next}, cap))
+
+law npath_arm_monotone_multi:
+  for +body: M.Ct
+  for +kids: M.Ct
+  for +next: M.Ct
+  for +cap: Nat
+  N.Le(M.Np.of(M.Node{M.KMulti{}, kids, next}, cap), M.Np.of(M.Node{M.KMulti{}, M.Node{M.KArm{}, body, kids}, next}, cap))
+
+law npath_arm_monotone_try:
+  for +body: M.Ct
+  for +kids: M.Ct
+  for +next: M.Ct
+  for +cap: Nat
+  N.Le(M.Np.of(M.Node{M.KTry{}, kids, next}, cap), M.Np.of(M.Node{M.KTry{}, M.Node{M.KArm{}, body, kids}, next}, cap))
+
+# N9. `if (c) {body}` has body's paths plus the implicit empty else.
+law npath_if_without_else:
+  for +body: M.Ct
+  {Npx.of(M.Node{M.KBranch{}, M.Node{M.KArm{}, body, M.Leaf{}}, M.Leaf{}}) == 1n+Npx.of(body) : Nat}
+
+# Short-circuits among a chain's statements (a loop's guard puts them there).
+def Sc(t: M.Ct) -> Nat:
+  match t:
+    case M.Leaf{}:
+      0n
+    case M.Node{k, kids, next}:
+      Nat.add(M.K.sc(k), Sc(next))
+
+# N10. a loop has its body's paths, plus one, plus one per short-circuit in its guard.
+law npath_loop:
+  for +body: M.Ct
+  {Npx.of(M.Node{M.KLoop{}, body, M.Leaf{}}) == Nat.add(1n+Npx.of(body), Sc(body)) : Nat}
