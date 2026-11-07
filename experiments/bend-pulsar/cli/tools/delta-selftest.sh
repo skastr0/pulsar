@@ -41,7 +41,7 @@ check "same sha: exit 0"          0 "added=0 allowed=0 removed=0" HEAD HEAD
 check "allowed by a committed decision: exit 0" 0 "added=0 allowed=1 removed=0" HEAD~2 HEAD~1
 check "metric findings added (cyclomatic and npath): exit 1" 1 "added=2 allowed=0 removed=0" HEAD~1 HEAD
 out=$("$BIN" delta HEAD~1 HEAD --repo . 2>/dev/null)
-grep -q '^+ core.cyclomatic [0-9a-f]* m.ts:1 tangled  cyclomatic 13 > 10 \[cyclomatic 13 .*\] (rule v1)$' <<<"$out" && echo "ok   metric rendering: rule, key, path:line, symbol, value > threshold, rule version" || { echo "FAIL metric rendering"; echo "$out" | head -3; fail=1; }
+grep -q '^+ core.cyclomatic [0-9a-f]* m.ts:1 tangled  cyclomatic 13 > 10 \[cyclomatic 13 .*\] (rule v2)$' <<<"$out" && echo "ok   metric rendering: rule, key, path:line, symbol, value > threshold, rule version" || { echo "FAIL metric rendering"; echo "$out" | head -3; fail=1; }
 out=$("$BIN" delta HEAD~4 HEAD~3 --repo . --json 2>/dev/null)
 grep -q '"change":"added".*"rule":"graph.import-cycle"' <<<"$out" && echo "ok   json line" || { echo "FAIL json line"; fail=1; }
 a=$("$BIN" delta HEAD~4 HEAD~3 --repo . 2>/dev/null | grep -o '^+ [^ ]* [0-9a-f]*'); b=$("$BIN" delta HEAD~4 HEAD~3 --repo . 2>/dev/null | grep -o '^+ [^ ]* [0-9a-f]*')
@@ -53,6 +53,14 @@ printf 'SF:m.ts\nDA:2,0\nDA:3,1\nend_of_record\n' > "$T/lcov.info"
 err=$("$BIN" delta HEAD~1 HEAD --repo . --coverage "$T/lcov.info" 2>&1 >/dev/null)
 grep -q 'coverage reports=1' <<<"$err" && echo "ok   --coverage reads the worktree report" || { echo "FAIL --coverage"; echo "$err" | tail -3; fail=1; }
 "$BIN" delta HEAD~1 HEAD --repo . --coverage "$T/none.info" >/dev/null 2>&1; [ $? == 2 ] && echo "ok   missing --coverage path: exit 2" || { echo "FAIL missing coverage path"; fail=1; }
+# Without the flag, head finds the report at the repo root (as `pulsar facts` does) and names it on
+# stderr; base never does. With no report there, it says none was found. A run that reads coverage
+# is never cached.
+err=$("$BIN" delta HEAD~1 HEAD --repo . 2>&1 >/dev/null)
+grep -q 'coverage read lcov.info' <<<"$err" && grep -q 'head .* cache=off' <<<"$err" && grep -q 'base .* cache=\(hit\|miss\)' <<<"$err" && echo "ok   head discovers a root report, names it, skips the cache; base does not" || { echo "FAIL coverage discovery"; echo "$err" | tail -4; fail=1; }
+rm -f "$T/lcov.info"
+err=$("$BIN" delta HEAD~1 HEAD --repo . 2>&1 >/dev/null)
+grep -q 'coverage none found at the repo root' <<<"$err" && echo "ok   no report at the root: says so" || { echo "FAIL coverage none found"; echo "$err" | tail -3; fail=1; }
 
 # Trend lines: the same function with a larger measured value is `~ worsened`, the reverse `~ improved`
 # (measurement only: never counted in `added`, never exit 1).
