@@ -31,6 +31,9 @@ const USAGE: &str = "usage:
   pulsar facts <repo> [-o file] [--coverage path]   write facts (and <file>.paths, <file>.fns when -o is given)
   pulsar delta <base> <head> [--repo dir] [--json] [--coverage file|dir]   findings added and removed between two shas (exit 1 if any added)
   pulsar init [--repo dir] [--force] [--print]   write a starter .pulsar/policy.toml from evidence, each choice commented
+  pulsar delta --walk [<base> [<head>]] [--since sha | --commits N]   the same for every first-parent commit in a range, one line each (exit 0)
+  pulsar blame [<head>] [--since sha | --commits N]   the commit that introduced each finding at head, following renames
+  pulsar bisect <finding-key> [<head>] | --test <finding-key>   binary-search the introducing commit; --test drives `git bisect run`
   pulsar explain [<rule>]           what a rule means: definition, threshold, laws, example (no rule: list them)
   pulsar version                    CLI sha, engine sha, Bend version and every rule with its version
   pulsar catalog [check <file>... | list [--repo dir] | --help]   class data (see `pulsar catalog --help`)
@@ -51,7 +54,10 @@ fn main() -> ExitCode {
         Some("explain") => explain::run(&args[1..]).map(|()| 0),
         Some("init") => init::run(&args[1..]),
         Some("version") | Some("--version") | Some("-V") => version::run().map(|()| 0),
+        Some("delta") if args.iter().any(|a| a == "--walk") => delta::walk::run_walk(&args[1..]),
         Some("delta") => delta::parse(&args[1..]).and_then(|a| delta::run(&a)),
+        Some("blame") => delta::walk::run_blame(&args[1..]),
+        Some("bisect") => delta::walk::run_bisect(&args[1..]),
         _ => Err(USAGE.to_string()),
     };
     match r {

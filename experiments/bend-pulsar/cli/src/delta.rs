@@ -33,6 +33,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
+pub(crate) mod walk;
+
 pub const USAGE: &str = "usage: pulsar delta <base> <head> [--repo dir] [--json] [--coverage file|dir] [--trend] [--no-cache]
   exit 0 = no finding added, 1 = at least one added, 2 = error
   --coverage reads a coverage report from the worktree and applies it to HEAD only (it describes the
@@ -796,6 +798,9 @@ struct Diff<'a> {
     unmatched_moves: usize,
     /// Rules whose version changed between base and head: (rule, old, new, findings re-keyed).
     rule_version_changed: Vec<(String, u32, u32, usize)>,
+    /// Base finding key -> head key for every finding matched across a rename or a rule version bump.
+    /// A history walk carries a finding's origin along these.
+    pairs: Vec<(u64, u64)>,
 }
 
 /// The comparison, decided by the engine's delta section (`engine/Delta.bend`). It runs twice: the
@@ -857,6 +862,7 @@ fn compare<'a>(before: &'a Eval, after: &'a Eval, renames: &Renames, trend_all: 
         renamed_findings: pairs.len() - rule_version_changed.iter().map(|v| v.3).sum::<usize>(),
         unmatched_moves,
         rule_version_changed,
+        pairs,
     })
 }
 

@@ -48,6 +48,9 @@ pulsar delta <base> <head>        # what the change added and removed
 pulsar delta main HEAD --json     # the same, one JSON line per finding, then a summary line
 pulsar delta main HEAD --trend    # also list functions whose measured values moved
 pulsar delta main HEAD --coverage coverage/lcov.info    # coverage for HEAD from a named report (default: found at the repo root)
+pulsar delta --walk --commits 50 # the same for every first-parent commit, one line each
+pulsar blame                      # for every finding at HEAD, the commit that introduced it
+pulsar bisect <finding-key>       # binary-search the introducing commit of one finding
 pulsar explain                    # list every rule
 pulsar explain core.cyclomatic    # definition, threshold, the laws that prove it, an example
 pulsar policy                     # policy parts and fingerprint
@@ -94,6 +97,23 @@ The first run on a sha parses it. The result is cached per sha under `~/.pulsar/
 | `cloudflare.hot-unindexed-query` | a `sql.unindexed-filter` finding in such code | Cloudflare pack and `sql.unindexed-filter` enabled; `pulsar policy` says when it is off |
 | `cloudflare.binding-drift` | a binding a deployable declares in its wrangler or alchemy config that no file its entry reaches reads | Cloudflare pack, or `[rules] enable`; a deployable whose entry does not resolve is never drift |
 | `cloudflare.unbounded-growth` | a `SELECT` with no `LIMIT` and no key bound, on a table that code an entry point reaches (within 3 call edges) inserts into | Cloudflare pack; needs a complete `.sql` schema |
+
+## Walking history
+
+```sh
+pulsar delta --walk --commits 50          # 8ff640e8b451 2026-11-07 +0 -1 ~1 ~0  refactor: split parse ...
+pulsar delta --walk main~30 main --findings   # base (exclusive) and head, with the findings under each commit
+pulsar blame --commits 100                # each finding at HEAD: introduced <sha> <date> <subject>  [worsened at <sha> ...]
+pulsar bisect <finding-key> --commits 100 # the commit that introduced it, in about log2(N) evaluations
+git bisect start HEAD <old> && git bisect run pulsar bisect --test <finding-key>
+```
+
+A walk evaluates each first-parent commit once and compares it with the one before, using the same engine delta as `pulsar delta`, so its memory is two commits' findings, not the length of the history. Every evaluation reads and writes the per-sha cache, so a second walk over the same commits parses nothing. `+` and `-` are findings added and removed by that commit, the first `~` the functions it worsened, the second the ones it improved.
+
+- `blame` follows a finding across a file rename or a rule version bump, using the same matching as `delta`. A finding present at the start of the range is `introduced before` it: widen `--commits` or `--since`. A finding that disappeared and came back is introduced where it came back.
+- `bisect` searches for the key a finding has at HEAD, and a rename re-keys a finding, so it stops at the rename. Use `blame` when renames matter. Exit codes: 0 found, 1 the key is not present at HEAD, 3 present at the start of the range, 2 error. `bisect --test <key>` evaluates the checked-out commit for `git bisect run`: 1 = present (bad), 0 = absent (good), 125 = could not evaluate (skip).
+- Walks read no coverage report, so `core.crap` is not in them.
+- The cache is capped (default 1 GB, `PULSAR_CACHE_MAX_MB`) and evicts the least recently used entry. A walk longer than the cache holds will evict its own oldest commits, and the next walk over them parses again: raise the cap for a long walk on a large repo.
 
 ## Coverage
 
