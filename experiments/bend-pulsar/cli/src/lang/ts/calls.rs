@@ -28,6 +28,8 @@ pub struct Entry {
     pub class: u32,
     pub via: Via,
     pub use_: Use,
+    /// `run = "awaited"`: a site only where the use runs in place.
+    pub run: bool,
 }
 
 /// What a wrapper call does to the functions it takes.
@@ -90,6 +92,7 @@ impl CatalogIndex {
                     class,
                     via: s.via.unwrap_or(Via::Call),
                     use_: parse_use(s.use_.as_deref()),
+                    run: s.run.is_some(),
                 });
             }
             for h in &c.handlers {

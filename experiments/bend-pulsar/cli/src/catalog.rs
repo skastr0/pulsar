@@ -76,9 +76,21 @@ pub struct Symbol {
     pub via: Option<Via>,
     #[serde(rename = "use")]
     pub use_: Option<String>,
+    /// `awaited`: the symbol builds a value that runs later (a prepared statement), so a site
+    /// counts only where the use is yielded or awaited where it is written.
+    pub run: Option<Run>,
     pub ver: String,
     pub at: String,
     pub doc: String,
+}
+
+/// When a use of a symbol is a site (`run`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Run {
+    /// Only where the use is the operand of `yield`, `yield*` or `await`, or in the receiver
+    /// chain of one (`await db.prepare(q).bind(x).all()`).
+    Awaited,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -408,6 +420,9 @@ fn check_declared(c: &Catalog, names: &BTreeSet<&str>) -> Result<(), String> {
         declared(&s.class, &format!("symbol {:?}", s.sym))?;
         if let Some(u) = &s.use_ {
             valid_use(u).map_err(|e| format!("symbol {:?}: {e}", s.sym))?;
+        }
+        if s.run.is_some() && s.use_.is_none() {
+            return Err(format!("symbol {:?}: run = \"awaited\" needs a use (tag, call or member:<name>)", s.sym));
         }
     }
     check_entries(c)?;

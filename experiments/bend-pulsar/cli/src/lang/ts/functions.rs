@@ -216,9 +216,9 @@ pub struct Walker<'s> {
     counters: Counters,
     /// Statements that are not early exits: a final top-level `return`/`throw`, a case-ending `break`.
     not_exit: HashSet<u32>,
-    /// Tagged templates whose value is run where it is written: the operand of `yield`, `yield*`
-    /// or `await` (see `mark_run`). Keyed by span start.
-    run_tags: HashSet<u32>,
+    /// Tagged templates and calls whose value is run where it is written: the operand of
+    /// `yield`, `yield*` or `await`, or its receiver chain (see `mark_run`). Keyed by span start.
+    run_at: HashSet<u32>,
     /// Calls and handlers need name resolution and a catalog; without them only functions and
     /// control trees are produced.
     scoping: Option<&'s Scoping>,
@@ -260,7 +260,7 @@ impl<'s> Walker<'s> {
             pending: Vec::new(),
             counters: Counters::default(),
             not_exit: HashSet::new(),
-            run_tags: HashSet::new(),
+            run_at: HashSet::new(),
             scoping: None,
             index: None,
             file_ctx: 0,
@@ -1200,17 +1200,20 @@ impl<'s> Walker<'s> {
     }
 
     /// Does the value bound to `sid` count for this use?
-    fn bound_use(&self, sid: SymbolId, path: &[String], tag: bool) -> Option<String> {
+    fn bound_use(&self, sid: SymbolId, path: &[String], tag: bool, ran: bool) -> Option<String> {
         let b = self.bound.get(&sid)?;
-        self.use_of(&b.sym, b.via, path, tag)
+        self.use_of(&b.sym, b.via, path, tag, ran)
     }
 
     /// Does a use of a value held for catalog symbol `sym` (a method path, a call or a tag)
     /// match one of its entries? Returns the symbol when it does.
-    fn use_of(&self, sym: &str, via: Via, path: &[String], tag: bool) -> Option<String> {
+    /// `ran`: the use runs where it is written (`mark_run`); an entry with `run = "awaited"`
+    /// counts only then.
+    fn use_of(&self, sym: &str, via: Via, path: &[String], tag: bool, ran: bool) -> Option<String> {
         let ix = self.index?;
         let hit = ix.entries(sym).iter().any(|e| {
             e.via == via
+                && (ran || !e.run)
                 && match (&e.use_, tag, path) {
                     (Use::Tag, true, []) => true,
                     (Use::Call, false, []) => true,
@@ -1327,15 +1330,21 @@ impl<'s> Walker<'s> {
         match self.resolve(&c) {
             Target::Sym(sym) => self.on_symbol_call(&sym, it),
             Target::Bound(sid) => {
-                if let Some(sym) = self.bound_use(sid, &c.path, false) {
+                if let Some(sym) = self.bound_use(sid, &c.path, false, self.run_at.contains(&it.span.start)) {
                     self.call_site_args(&sym, &it.arguments);
+                    self.sql_call(&sym, &it.arguments, it.span);
+                } else if let Some(sym) = self.bound_use(sid, &c.path, false, true) {
+                    // Built here and run later: no site, but its SQL text is read.
                     self.sql_call(&sym, &it.arguments, it.span);
                 }
             }
             Target::Held { sym, via, rest } => {
-                if let Some(sym) = self.use_of(&sym, via, &rest, false) {
-                    self.call_site_args(&sym, &it.arguments);
-                    self.sql_call(&sym, &it.arguments, it.span);
+                let ran = self.run_at.contains(&it.span.start);
+                if let Some(s) = self.use_of(&sym, via, &rest, false, ran) {
+                    self.call_site_args(&s, &it.arguments);
+                    self.sql_call(&s, &it.arguments, it.span);
+                } else if let Some(s) = self.use_of(&sym, via, &rest, false, true) {
+                    self.sql_call(&s, &it.arguments, it.span);
                 }
             }
             Target::None => {}
@@ -1393,7 +1402,7 @@ impl<'s> Walker<'s> {
     fn mark_run(&mut self, e: &Expression<'_>) {
         match e.get_inner_expression() {
             Expression::TaggedTemplateExpression(t) => {
-                self.run_tags.insert(t.span.start);
+                self.run_at.insert(t.span.start);
             }
             Expression::ConditionalExpression(c) => {
                 self.mark_run(&c.consequent);
@@ -1409,6 +1418,7 @@ impl<'s> Walker<'s> {
                 }
             }
             Expression::CallExpression(c) => {
+                self.run_at.insert(c.span.start);
                 if let Some(m) = c.callee.get_inner_expression().as_member_expression() {
                     self.mark_run(m.object());
                 }
@@ -1424,8 +1434,8 @@ impl<'s> Walker<'s> {
         self.index?;
         let c = self.chain(tag)?;
         match self.resolve(&c) {
-            Target::Bound(sid) => self.bound_use(sid, &c.path, true),
-            Target::Held { sym, via, rest } => self.use_of(&sym, via, &rest, true),
+            Target::Bound(sid) => self.bound_use(sid, &c.path, true, true),
+            Target::Held { sym, via, rest } => self.use_of(&sym, via, &rest, true, true),
             _ => None,
         }
     }
@@ -1887,7 +1897,7 @@ impl<'a> Visit<'a> for Walker<'_> {
             // A template builds a statement; it is a call site only where that statement runs.
             // Built and stored (`stmts.push(db`..`)`, `const q = db`..``) it is not: what runs it
             // later (a batch) is its own site. The SQL text is kept either way.
-            if self.run_tags.contains(&it.span.start) {
+            if self.run_at.contains(&it.span.start) {
                 self.call_site(&sym);
             }
             if self.is_query(&sym) {

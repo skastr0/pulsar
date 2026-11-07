@@ -47,6 +47,9 @@ FILE FORMAT  (TOML; format = "pulsar-catalog 0")
       use   with yield/result/yield-result, which use counts: tag (a tagged template yielded
             or awaited where it is written; one stored or passed on is built, not run), call,
             member:<name> (a method call), member:* (any method); with new: noargs
+      run   "awaited" (optional, needs a use): sym builds a value that runs later, such as a
+            prepared statement, so a use is a site only where it is yielded or awaited where it
+            is written, or is the receiver of such a call (`await db.prepare(q).bind(x).all()`)
       ver   a label for the library version or runtime this entry is true for ("3", "4", "node", "js")
       at    where the justification lives (file:line); doc  the text that justifies the class
 
