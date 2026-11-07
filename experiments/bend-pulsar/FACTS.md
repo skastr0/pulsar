@@ -73,10 +73,11 @@ grouped by function, with rules in the order cyclomatic, nesting, npath, length.
 Rule ids and default thresholds: `core.cyclomatic` 10, `core.nesting` 3,
 `core.npath` 200, `core.length` 60 (`research/thresholds.md`, `Metrics.defaults()`).
 A decision for cyclomatic, and a short-circuit for NPath, is any `CT` kind-6 node: `&&`, `||`, `??`,
-their assignment forms and optional chaining `?.` (CO op 7). That makes `core.cyclomatic` rule version 2;
-cognitive does not count `?.`.
-`core.npath` is rule version 2 for the same reason. The CLI keys all three changed rules (cyclomatic,
-npath, length) as v2; delta matches v1 base findings to them and reports `rule_version_changed`.
+their assignment forms, optional chaining `?.` (CO op 7) and default values (CO op 8: parameter and
+destructuring defaults, as ESLint counts `AssignmentPattern`). That made `core.cyclomatic` rule version 2
+(`?.`) and now version 3 (defaults); cognitive counts neither.
+`core.npath` is rule version 2 and 3 for the same reasons. The CLI keys all three changed rules (cyclomatic,
+npath, length) as v2 or later; delta matches v1 base findings to them and reports `rule_version_changed`.
 `core.length` (rule version 2) has two tiers. A body is linear when its cyclomatic is at most 2
 and its nesting at most 1, and structured otherwise. A structured body is flagged above the `Rules`
 length threshold (60), a linear one above 300. The `FX core.length` line ends with `shape=structured`
@@ -99,7 +100,7 @@ The level rises inside an arm, a loop and a catch; a try body and a finally keep
 Where `CT` cannot tell what the paper needs, the count leans low, so it never exceeds the
 paper's count:
 - `else` adds nothing (CT cannot tell `if/else` from a ternary);
-- `??`, the assignment operators, optional chaining `?.`, recursion and labelled jumps add nothing
+- `??`, the assignment operators, optional chaining `?.`, default values, recursion and labelled jumps add nothing
   (the paper scores none of them; Cognitive-LAWS `cog_unscored_op_free`);
 - a nested function counts in its own tree;
 - a missing `CO` row reads as an operator that adds nothing.
@@ -222,7 +223,7 @@ Function ids are `0..m-1`, in the order (file id, start offset). Ids are per run
 | `FN` | `fn file parent loc` | A function, method, closure or arrow function. `parent` is the enclosing function, or `4294967295` at top level. `loc` is the number of non-blank lines in its span, nested functions included (only `CT` excludes them). |
 | `FK` | `fn hi lo` | Stable key: a 64-bit hash of path, container chain, name, kind and ordinal, never a line. See "`FK` key and kinds". |
 | `CT` | `fn node parent kind` | One node of the function's control tree. `node` ids are exactly `1..k` per function, in preorder, so sibling order is id order; `parent = 0` is the function body, and a parent id is always smaller than its child's. Sorted by `(fn, node)`. |
-| `CO` | `fn node op` | The operator of a kind-6 (short-circuit) `CT` node: 1 `&&`, 2 `\|\|`, 3 `??`, 4 `&&=`, 5 `\|\|=`, 6 `??=`, 7 `?.` (an optional member, call or element access: one node per `?.`, like `??` a short-circuit). One row per kind-6 node, sorted by `(fn, node)`, written after `CT`. Rust emits 1 and 2 only. Cognitive complexity uses it: a run of the same operator counts once. |
+| `CO` | `fn node op` | The operator of a kind-6 (short-circuit) `CT` node: 1 `&&`, 2 `\|\|`, 3 `??`, 4 `&&=`, 5 `\|\|=`, 6 `??=`, 7 `?.` (an optional member, call or element access: one node per `?.`, like `??` a short-circuit), 8 a default value (one node per parameter default `x = 1`, binding-pattern default `{ a = 1 }` or `[a = 1]`, or destructuring-assignment default; TS lane only). One row per kind-6 node, sorted by `(fn, node)`, written after `CT`. Rust emits 1 and 2 only. Cognitive complexity uses it: a run of the same operator counts once. |
 | `TF` | `fn` | Function `fn` is test code. Rust: an item under `#[cfg(test)]` (also `cfg(all(test, ..))`, not under `not(..)`), a function with `#[test]`, `#[tokio::test]` or any attribute ending in `test`, `#[rstest]`, `#[test_case]` or `#[bench]`, and every function in a file reachable only through `#[cfg(test)] mod x;`. TS: a function in a test file (`.test.*`, `.spec.*`, `__tests__/`, `tests/`). Absence means production code. Detectors for complexity, size, NPath, CRAP and hotspots skip a function that has a `TF` row. One row per test function, none for a repo without tests. Sorted by `fn`. |
 
 **`FK` key and kinds.**

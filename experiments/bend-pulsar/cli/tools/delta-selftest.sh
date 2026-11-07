@@ -41,7 +41,7 @@ check "same sha: exit 0"          0 "added=0 allowed=0 removed=0" HEAD HEAD
 check "allowed by a committed decision: exit 0" 0 "added=0 allowed=1 removed=0" HEAD~2 HEAD~1
 check "metric findings added (cyclomatic and npath): exit 1" 1 "added=2 allowed=0 removed=0" HEAD~1 HEAD
 out=$("$BIN" delta HEAD~1 HEAD --repo . 2>/dev/null)
-grep -q '^+ core.cyclomatic [0-9a-f]* m.ts:1 tangled  cyclomatic 13 > 10 \[cyclomatic 13 .*\] (rule v2)$' <<<"$out" && echo "ok   metric rendering: rule, key, path:line, symbol, value > threshold, rule version" || { echo "FAIL metric rendering"; echo "$out" | head -3; fail=1; }
+grep -q '^+ core.cyclomatic [0-9a-f]* m.ts:1 tangled  cyclomatic 13 > 10 \[cyclomatic 13 .*\] (rule v3)$' <<<"$out" && echo "ok   metric rendering: rule, key, path:line, symbol, value > threshold, rule version" || { echo "FAIL metric rendering"; echo "$out" | head -3; fail=1; }
 out=$("$BIN" delta HEAD~4 HEAD~3 --repo . --json 2>/dev/null)
 grep -q '"change":"added".*"rule":"graph.import-cycle"' <<<"$out" && echo "ok   json line" || { echo "FAIL json line"; fail=1; }
 a=$("$BIN" delta HEAD~4 HEAD~3 --repo . 2>/dev/null | grep -o '^+ [^ ]* [0-9a-f]*'); b=$("$BIN" delta HEAD~4 HEAD~3 --repo . 2>/dev/null | grep -o '^+ [^ ]* [0-9a-f]*')

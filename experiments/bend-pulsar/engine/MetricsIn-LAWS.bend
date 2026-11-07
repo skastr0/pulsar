@@ -78,6 +78,12 @@ law glue_prints_lines:
 law glue_op_optional_chain:
   {I.In.op(7) == G.ONone{} : G.Op}
 
+# G4''. the CO decoder reads op 8 (a default value: a parameter default `x = 1` or a
+# destructuring default `{ a = 1 }`) as an unscored operator too, so it adds no cognitive;
+# its CT kind-6 node counts for cyclomatic and NPath (lead ruling, 2026-11-07).
+law glue_op_default_value:
+  {I.In.op(8) == G.ONone{} : G.Op}
+
 # G5. refused facts print nothing: the trees are refused, the CV rows or the CO rows
 # are malformed, or the join refuses.
 law glue_refuses:

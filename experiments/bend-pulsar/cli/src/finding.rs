@@ -14,11 +14,11 @@ pub struct Rule {
 }
 
 /// Engine `FX`: a function over a metric threshold. Rule ids and versions per FACTS.md.
-/// v2: optional chaining `?.` counts as a decision (FACTS.md).
-pub const CYCLOMATIC: Rule = Rule { id: "core.cyclomatic", version: 2 };
+/// v2: optional chaining `?.` counts as a decision. v3: so does each default value (FACTS.md).
+pub const CYCLOMATIC: Rule = Rule { id: "core.cyclomatic", version: 3 };
 pub const NESTING: Rule = Rule { id: "core.nesting", version: 1 };
-/// v2: optional chaining `?.` counts as a short-circuit path.
-pub const NPATH: Rule = Rule { id: "core.npath", version: 2 };
+/// v2: optional chaining `?.` counts as a short-circuit path. v3: so does each default value.
+pub const NPATH: Rule = Rule { id: "core.npath", version: 3 };
 /// v2: two tiers, linear bodies over 300 lines and structured bodies over 60 (FACTS.md).
 pub const LENGTH: Rule = Rule { id: "core.length", version: 2 };
 /// Needs line coverage: only computed where a coverage report is supplied (see `needs_coverage`).

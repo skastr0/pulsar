@@ -80,6 +80,12 @@
   "new": "    case 2:\n      G.OOr{}\n    case 7:\n      G.OAnd{}\n    case _:"
  },
  {
+  "law": "glue_op_default_value",
+  "bug": "a default value is read as &&",
+  "old": "    case 2:\n      G.OOr{}\n    case _:",
+  "new": "    case 2:\n      G.OOr{}\n    case 8:\n      G.OAnd{}\n    case _:"
+ },
+ {
   "law": "glue_entry",
   "bug": "MetricsIn.lines passes no churn to Hotspot",
   "old": "In.go(r, In.cvs(rows), Ch.Churn.of(rows), In.cos(rows)",

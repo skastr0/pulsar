@@ -68,6 +68,8 @@ pub mod op {
     pub const NULLISH_ASSIGN: u8 = 6;
     /// `?.`: an optional member, call or element access.
     pub const OPTIONAL: u8 = 7;
+    /// A default value: a parameter default (`x = 1`) or a destructuring default (`{ a = 1 }`).
+    pub const DEFAULT: u8 = 8;
 }
 
 /// Which boolean operator a kind-6 control node stands for (`CO fn node op`).

@@ -1,0 +1,18 @@
+# A default value is a CT kind-6 short-circuit with CO op 8: one decision for cyclomatic, one
+# path for NPath, nothing for cognitive (lead ruling 2026-11-07).
+#   function 0: function f(a = 1, { b = 2 }) { if (a) { ... } }
+#   CT 1 and 2 the two defaults (children of the body), CT 3 the branch, CT 4 its arm
+#   cyclomatic 1 + 2 defaults + if = 4; nesting 1; cognitive: the if at level 0 = 1, defaults 0.
+#   NPath 2: a short-circuit adds a path only inside a branch guard or a loop header, and these
+#   two sit in the body (a default in a `for (const { a = 1 } of xs)` header would add one).
+pulsar-facts 0
+N 1
+F 0 1
+M 1
+FN 0 0 4294967295 6
+CT 0 1 0 6
+CT 0 2 0 6
+CT 0 3 0 1
+CT 0 4 3 2
+CO 0 1 8
+CO 0 2 8

@@ -1781,7 +1781,30 @@ impl<'a> Visit<'a> for Walker<'_> {
         if let (Some(ann), BindingPattern::BindingIdentifier(b)) = (&it.type_annotation, &it.pattern) {
             self.bind_annotation(b.symbol_id.get(), ann);
         }
+        if it.initializer.is_some() {
+            self.short_circuit(op::DEFAULT);
+        }
         walk::walk_formal_parameter(self, it);
+    }
+
+    // A default value runs only when the value is missing: one short-circuit node (CO op 8) each,
+    // in a parameter list, a binding pattern and a destructuring assignment alike.
+
+    fn visit_assignment_pattern(&mut self, it: &AssignmentPattern<'a>) {
+        self.short_circuit(op::DEFAULT);
+        walk::walk_assignment_pattern(self, it);
+    }
+
+    fn visit_assignment_target_with_default(&mut self, it: &AssignmentTargetWithDefault<'a>) {
+        self.short_circuit(op::DEFAULT);
+        walk::walk_assignment_target_with_default(self, it);
+    }
+
+    fn visit_assignment_target_property_identifier(&mut self, it: &AssignmentTargetPropertyIdentifier<'a>) {
+        if it.init.is_some() {
+            self.short_circuit(op::DEFAULT);
+        }
+        walk::walk_assignment_target_property_identifier(self, it);
     }
 
 }
@@ -1854,6 +1877,28 @@ mod tests {
         assert_eq!(short.len(), 4, "o?.a, ?.b, ?.(), ?.[k]");
         assert_eq!(out.ops.len(), 4);
         assert!(out.ops.iter().all(|o| o.op == op::OPTIONAL));
+    }
+
+    /// Every default value is one short-circuit node (kind 6) with CO op 8: parameter defaults,
+    /// binding-pattern defaults (declaration, parameter, nested) and destructuring-assignment
+    /// defaults. A parameter or property without a default adds none.
+    #[test]
+    fn each_default_value_is_a_short_circuit_with_op_8() {
+        let src = "function f(a, b = 1, { c = 2, d: { e = 3 }, ...r } = {}, [g = 4] = []) {\n  const { h = 5, i } = a;\n  let j, k;\n  ({ j = 6, k } = a);\n  [j = 7] = [];\n  return b;\n}\nconst m = (x = 1) => x;\nclass C { constructor(private p = 1, q?: number) {} }\n";
+        let alloc = Allocator::default();
+        let ret = Parser::new(&alloc, src, SourceType::ts()).parse();
+        let out = Walker::new("m.ts", src).run(&ret.program);
+        // f: b, the whole third parameter, c, e, the whole fourth, g, h, j (property), j (element) = 9
+        // m: x = 1; C.constructor: p = 1.
+        let per_fn = |name: &str| {
+            let idx = out.fns.iter().position(|f| f.chain == name).unwrap_or_else(|| panic!("no fn {name}"));
+            out.ops.iter().filter(|o| o.fn_local as usize == idx && o.op == op::DEFAULT).count()
+        };
+        assert_eq!(per_fn("f"), 9);
+        assert_eq!(per_fn("m"), 1);
+        assert_eq!(per_fn("C>constructor"), 1);
+        assert!(out.ops.iter().all(|o| o.op == op::DEFAULT), "no other short-circuit in the source");
+        assert_eq!(out.ops.len(), out.ct.iter().filter(|c| c.kind == ct::SHORT_CIRCUIT).count());
     }
 
     #[test]

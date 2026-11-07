@@ -41,3 +41,6 @@ def Laws.glue_entry(r, rows):
 
 def Laws.glue_op_optional_chain():
   {==}
+
+def Laws.glue_op_default_value():
+  {==}
