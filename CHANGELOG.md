@@ -4,6 +4,41 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project follows Semantic Versioning for its declared public API.
 
+## [0.4.0] - unreleased
+
+A rewrite. Pulsar 0.4.0 is a Rust CLI plus an engine written in Bend and compiled to native code. It reports named findings with file, symbol and evidence for a git sha, and what a change added or removed between two shas. There are no scores, weights, grades or readiness bands. The 0.3.0 commands, packs, vectors and scoring are removed; nothing is kept for compatibility.
+
+### Verification
+
+Each finding is checked by a formally verified engine, given the facts it read: every detector, composite and threshold below has laws in `engine/*-LAWS.bend` that `bend engine/PROOF.bend --verdict` proves about the shipped functions. Fact extraction (the parsers and adapters) is not proven; it is tested with fixtures and differential runs on real repositories. The delta's set difference (added, removed, worsened, improved) is computed in the CLI and is tested, not proven, in 0.4.0.
+
+### Rules
+
+- Core, on by default: `core.cyclomatic` v2, `core.nesting`, `core.npath` v2, `core.length` v2 (two tiers: linear bodies over 300 lines, structured ones over 60), `graph.import-cycle`.
+- Core, opt-in: `core.cognitive` (SonarSource spec, threshold 15; list it in `[rules] enable`).
+- Coverage: `core.crap` with its cause (`complexity-only` or `coverage`), from Vitest/Istanbul `coverage-final.json`, lcov or `cargo llvm-cov` lcov.
+- History: `core.hotspot` and `core.risky-change`, plus worsened and improved trends per function.
+- Effect pack (on when the repo depends on `effect`): `effect.ambient-read-in-effect`, `effect.blocking-in-effect`, `effect.runtime-escape-in-effect`, and the layer-graph rules `effect.layer-cycle`, `effect.unprovided-service`, `effect.duplicate-builder`, `effect.hub-service`.
+- SQL lane (SQLite and Postgres), opt-in per rule: `sql.dynamic-text`, `sql.offset-param`, `sql.index-defeat`, `sql.unindexed-filter`, `sql.fk-unindexed`, `sql.schema-drift`.
+- Cloudflare Workers catalog: D1 and Durable Object SQL calls are queries, the `cloudflare:workers` env import is an ambient read.
+- Rust: the metrics, import cycles and CRAP from `cargo llvm-cov`.
+
+### Rule versions
+
+`core.cyclomatic` and `core.npath` are v2 because optional chaining `?.` now counts as a decision and as a short-circuit path; `core.length` is v2 because of its two tiers. A rule version is part of a finding's key, so these findings get new keys. `pulsar delta` matches a v1 finding to the same rule's v2 finding about the same subject and reports `rule_version_changed=<rule> 1->2 rekeyed=<n>` instead of a removal plus an addition.
+
+### Commands
+
+`pulsar delta <base> <head>` (findings added and removed, exit 1 when any were added; follows renames), `pulsar init` (a starter `.pulsar/policy.toml` from the repo's evidence), `pulsar explain [<rule>]`, `pulsar policy` (the effective policy and its fingerprint), `pulsar catalog`, `pulsar version`.
+
+### Policy
+
+One per repository, committed in `.pulsar/` and fingerprinted: `policy.toml` (lanes, scope, history window, rules on or off), `decisions.toml` (findings accepted with a reason) and repo catalogs. A home-directory policy is used only as an organisation fallback, and the output says so.
+
+### Not in 0.4.0
+
+Fan-out (N+1) findings, the remaining non-idiomatic Effect rules (promise and exception style in Effect-first scope), Durable Object bindings and the type-aware lane wait for 0.4.1 or later. Packages ship for darwin-arm64 and linux-x64 only. Windows is not supported.
+
 ## [0.3.0] - 2026-09-24
 
 ### Added

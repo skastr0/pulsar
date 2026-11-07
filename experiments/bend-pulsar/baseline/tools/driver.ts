@@ -1,11 +1,13 @@
 // Measurement driver (not part of Pulsar). Uses Pulsar's own exported functions.
+// The 0.3.0 oracle was deleted from main (#717). Check it out at tag v0.3.0 beside this repo:
+//   git worktree add ../pulsar-legacy v0.3.0 && (cd ../pulsar-legacy && bun install && bun run build)
 import { writeFileSync } from "node:fs"
 import { relative } from "node:path"
 import { Effect, Layer, Scope, Context } from "effect"
-import { makeTsAnalysisSession, TsAnalysisTag, TsPackageInfoTag } from "/Users/guilhermecastro/Projects/pulsar/packages/ts-pack/dist/ts-analysis.js"
-import { analyzeCircularDependencies } from "/Users/guilhermecastro/Projects/pulsar/packages/ts-pack/dist/signals/ts-ad-02-cycle-graph.js"
-import { buildModuleGraphFromFiles } from "/Users/guilhermecastro/Projects/pulsar/packages/ts-pack/dist/graph/module-graph.js"
-import { TsAd02 } from "/Users/guilhermecastro/Projects/pulsar/packages/ts-pack/dist/signals/ts-ad-02-circular-deps.js"
+import { makeTsAnalysisSession, TsAnalysisTag, TsPackageInfoTag } from "/Users/guilhermecastro/Projects/pulsar-legacy/packages/ts-pack/dist/ts-analysis.js"
+import { analyzeCircularDependencies } from "/Users/guilhermecastro/Projects/pulsar-legacy/packages/ts-pack/dist/signals/ts-ad-02-cycle-graph.js"
+import { buildModuleGraphFromFiles } from "/Users/guilhermecastro/Projects/pulsar-legacy/packages/ts-pack/dist/graph/module-graph.js"
+import { TsAd02 } from "/Users/guilhermecastro/Projects/pulsar-legacy/packages/ts-pack/dist/signals/ts-ad-02-circular-deps.js"
 
 const mode = process.argv[2]!
 const repo = process.argv[3]!
