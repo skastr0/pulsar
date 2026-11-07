@@ -102,11 +102,24 @@ fi
 
 # snapshot mode: cycles on the worktree (full findings once the engine prints them)
 H=$(sha_of HEAD)
+ENGINE=${PULSAR_ENGINE:-$EXP/engine/pulsar-engine}
 OUT=$(mktemp /tmp/dogfood-cycles.XXXXXX.txt)
 set +e
 "$CLI" cycles "$REPO" > "$OUT" 2>/tmp/dogfood-cycles.err
 rc=$?
 set -e
+# Until the CLI renders FM/FX itself, fall back to facts + engine binary
+# directly (lead ruling: first dogfood run reads engine output directly).
+if [ $rc -ne 0 ] || grep -q "unknown engine line tag" /tmp/dogfood-cycles.err; then
+  if [ -x "$ENGINE" ]; then
+    warn "pulsar cycles cannot parse engine output yet — using facts + $ENGINE directly"
+    FACTS=$(mktemp /tmp/dogfood-self.XXXXXX.facts)
+    "$CLI" facts "$REPO" -o "$FACTS" >/dev/null 2>&1
+    "$ENGINE" "$FACTS" > "$OUT" 2>>/tmp/dogfood-cycles.err
+    rc=$?
+    rm -f "$FACTS" "$FACTS.paths" "$FACTS.fns" "$FACTS.syms"
+  fi
+fi
 {
   echo "# snapshot findings at $H (worktree)"
   echo "# stderr: $(tail -1 /tmp/dogfood-cycles.err)"
