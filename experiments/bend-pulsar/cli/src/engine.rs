@@ -25,6 +25,8 @@ pub struct Fx {
     pub fn_id: u32,
     pub value: u64,
     pub threshold: u64,
+    /// The `key=value` evidence tail after the fourth field (composites and CRAP), in order.
+    pub extra: Vec<(String, String)>,
 }
 
 pub fn locate() -> Result<PathBuf, String> {
@@ -114,7 +116,10 @@ pub fn parse(text: &str) -> Result<Findings, String> {
                 let fn_id = num(it.next().ok_or("FX without fn")?)? as u32;
                 let value = num(it.next().ok_or("FX without value")?)?;
                 let threshold = num(it.next().ok_or("FX without threshold")?)?;
-                f.fx.push(Fx { rule, fn_id, value, threshold });
+                let extra = it
+                    .map(|t| t.split_once('=').map(|(k, v)| (k.to_string(), v.to_string())).ok_or(format!("FX evidence {t:?} is not key=value")))
+                    .collect::<Result<Vec<_>, _>>()?;
+                f.fx.push(Fx { rule, fn_id, value, threshold, extra });
             }
             other => return Err(format!("unknown engine line tag {other:?}")),
         }
@@ -135,7 +140,16 @@ mod tests {
         let f = parse(t).unwrap();
         assert_eq!(f.cycles, vec![vec![0, 1]]);
         assert_eq!(f.fm, vec![[3, 1, 4, 9], [12, 4, 300, 70]]);
-        assert_eq!(f.fx[1], Fx { rule: "core.nesting".into(), fn_id: 1, value: 4, threshold: 3 });
+        assert_eq!(f.fx[1], Fx { rule: "core.nesting".into(), fn_id: 1, value: 4, threshold: 3, extra: vec![] });
+    }
+
+    #[test]
+    fn keeps_the_key_value_evidence_tail_of_composite_findings() {
+        let t = "pulsar-findings 0\nFX core.hotspot 0 5 2 churn=5 core.cyclomatic=12/10 core.npath=300/200\nFX core.crap 1 40 30 cyclomatic=9 covered=1 coverable=7\n";
+        let f = parse(t).unwrap();
+        assert_eq!(f.fx[0].extra, vec![("churn".into(), "5".into()), ("core.cyclomatic".into(), "12/10".into()), ("core.npath".into(), "300/200".into())]);
+        assert_eq!(f.fx[1].extra[2], ("coverable".to_string(), "7".to_string()));
+        assert!(parse("pulsar-findings 0\nFX core.hotspot 0 5 2 churn\n").unwrap_err().contains("key=value"));
     }
 
     #[test]

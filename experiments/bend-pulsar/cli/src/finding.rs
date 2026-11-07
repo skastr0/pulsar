@@ -20,17 +20,28 @@ pub const NPATH: Rule = Rule { id: "core.npath", version: 1 };
 pub const LENGTH: Rule = Rule { id: "core.length", version: 1 };
 /// Needs line coverage: only computed where a coverage report is supplied (see `needs_coverage`).
 pub const CRAP: Rule = Rule { id: "core.crap", version: 1 };
+/// A function with high churn and a complexity finding (needs commit history).
+pub const HOTSPOT: Rule = Rule { id: "core.hotspot", version: 1 };
+/// A CRAP finding on a function with high churn (needs history and coverage).
+pub const RISKY_CHANGE: Rule = Rule { id: "core.risky-change", version: 1 };
+/// Cognitive complexity (SonarSource). Weak evidence, so it is off unless policy enables it.
+pub const COGNITIVE: Rule = Rule { id: "core.cognitive", version: 1 };
 
 /// Does the rule need a coverage report? Such findings exist only for a sha that has one, so a
 /// base-versus-head diff cannot compare them; delta lists them for head on their own.
 pub fn needs_coverage(rule: &Rule) -> bool {
-    rule.id == CRAP.id
+    rule.id == CRAP.id || rule.id == RISKY_CHANGE.id
+}
+
+/// Rules that stay silent unless `[rules] enable` lists them (their evidence is weak).
+pub fn off_by_default(rule: &Rule) -> bool {
+    rule.id == COGNITIVE.id
 }
 
 /// The rule for an engine `FX` rule id, or an error if the CLI does not know it (an engine and
 /// CLI that disagree must fail, not drop findings).
 pub fn metric_rule(id: &str) -> Result<Rule, String> {
-    [CYCLOMATIC, NESTING, NPATH, LENGTH, CRAP]
+    [CYCLOMATIC, NESTING, NPATH, LENGTH, CRAP, HOTSPOT, RISKY_CHANGE, COGNITIVE]
         .into_iter()
         .find(|r| r.id == id)
         .ok_or_else(|| format!("engine reported FX rule {id:?}, which this CLI does not know"))

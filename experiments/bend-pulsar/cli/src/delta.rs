@@ -13,7 +13,7 @@ use crate::coverage;
 use crate::driver;
 use crate::engine::{self, Findings};
 use crate::facts::{stable_key, FactWriter, SideTables};
-use crate::finding::{hex, metric_rule, needs_coverage, Finding, Subject, IMPORT_CYCLE};
+use crate::finding::{hex, metric_rule, needs_coverage, off_by_default, Finding, Subject, IMPORT_CYCLE};
 use crate::lang::Degraded;
 use crate::policy::{self, Effective};
 use serde_json::{json, Value};
@@ -197,11 +197,12 @@ fn metric_findings(
     tables: &SideTables,
     keys: &[u64],
     disabled: &[String],
+    enabled: &[String],
 ) -> Result<Vec<Finding>, String> {
     let mut out = Vec::new();
     for x in &found.fx {
         let rule = metric_rule(&x.rule)?;
-        if disabled.iter().any(|r| r == rule.id) {
+        if disabled.iter().any(|r| r == rule.id) || (off_by_default(&rule) && !enabled.iter().any(|r| r == rule.id)) {
             continue;
         }
         let entry = tables.fns.get(x.fn_id as usize).ok_or_else(|| format!("FX names function {} but only {} exist", x.fn_id, tables.fns.len()))?;
@@ -209,18 +210,20 @@ fn metric_findings(
         let me = measures.get(&key).ok_or("FX function has no FM row")?;
         let [cc, nest, npath, len] = me.m;
         let cap = if x.rule == "core.npath" && x.value >= 16_777_215 { "+ (at least the cap)" } else { "" };
+        let tail: String = x.extra.iter().map(|(k, v)| format!(" {k}={v}")).collect();
+        let extra: serde_json::Map<String, Value> = x.extra.iter().map(|(k, v)| (k.clone(), json!(v))).collect();
         let finding = Finding::new(
             rule,
             vec![Subject::Function { key, path: me.path.clone(), chain: me.chain.clone() }],
             me.path.clone(),
             Some(me.chain.clone()),
             format!(
-                "{} {}{cap} > {} [cyclomatic {cc} nesting {nest} npath {npath} length {len}]",
+                "{} {}{cap} > {} [cyclomatic {cc} nesting {nest} npath {npath} length {len}]{tail}",
                 rule.id.trim_start_matches("core."),
                 x.value,
                 x.threshold
             ),
-            json!({ "value": x.value, "threshold": x.threshold,
+            json!({ "value": x.value, "threshold": x.threshold, "extra": extra,
                     "metrics": { "cyclomatic": cc, "nesting": nest, "npath": npath, "length": len },
                     "lines": [entry.start_line, entry.end_line] }),
         );
@@ -270,7 +273,7 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>) -> Resul
             insert(&mut findings, f, sha)?;
         }
     }
-    for f in metric_findings(&found, &measures, &tables, &set.fn_keys, disabled)? {
+    for f in metric_findings(&found, &measures, &tables, &set.fn_keys, disabled, &eff.policy.rules.enable)? {
         insert(&mut findings, f, sha)?;
     }
     Ok(Eval { findings, measures, timing, policy: eff, degraded: dstats.degraded })
