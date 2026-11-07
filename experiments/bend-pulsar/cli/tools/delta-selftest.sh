@@ -211,4 +211,34 @@ out=$("$BIN" delta HEAD~1 HEAD --repo "$W" 2>/dev/null)
 grep -q '^+ effect.promise-style-in-effect-scope [0-9a-f]* core/a.ts' <<<"$out" && echo "ok   promise-style code in an effect-only file is a finding" || { echo "FAIL effect-only scope"; echo "$out" | head -4; fail=1; }
 ! grep -q 'lib/b.ts' <<<"$out" && echo "ok   the same code outside the effect-only scope is not" || { echo "FAIL out-of-scope file reported"; fail=1; }
 
+# effect.throw-or-try-in-gen (ctx bit 128): throw and try directly in an Effect.gen or Effect.fn body
+# are findings; inside Effect.try or Effect.tryPromise, in a helper nested in the body, or in a test
+# they are not. Pack-gated: no effect_only policy needed.
+G=$(mktemp -d); trap 'rm -rf "$T" "$K" "$D" "$E" "$R" "$Q" "$W" "$G"' EXIT
+( cd "$G" && git init -q . && git config user.email t@t && git config user.name t
+  echo base > README.md && git add -A && git commit -qm base
+  echo '{"dependencies":{"effect":"*"}}' > package.json
+  cat > g.ts <<'TS'
+import { Effect } from "effect"
+export const fires1 = Effect.gen(function* () {
+  if (Math.PI > 4) throw new Error("x")
+  return 1
+})
+export const fires2 = Effect.fn("fires2")(function* (s: string) {
+  try { return JSON.parse(s) } catch { return 0 }
+})
+export const quiet1 = Effect.gen(function* () {
+  const a = yield* Effect.try({ try: () => { throw new Error("y") }, catch: () => "e" })
+  const b = yield* Effect.tryPromise({ try: async () => { try { return 1 } finally { } }, catch: () => "e" })
+  const helper = (n: number) => { if (n < 0) throw new Error("z"); return n }
+  return a + b + helper(1)
+})
+TS
+  sed -e 's/fires1/inTest1/; s/fires2/inTest2/g' g.ts > g.test.ts
+  git add -A && git commit -qm "throw and try in and out of Effect.gen bodies" )
+out=$("$BIN" delta HEAD~1 HEAD --repo "$G" 2>/dev/null)
+grep -q '^+ effect.throw-or-try-in-gen [0-9a-f]* g.ts:2 fires1 .*syntax#throw (x1) (rule v1)$' <<<"$out" && echo "ok   a throw directly in an Effect.gen body is a finding" || { echo "FAIL throw in Effect.gen"; grep throw-or-try <<<"$out"; fail=1; }
+grep -q '^+ effect.throw-or-try-in-gen [0-9a-f]* g.ts:6 fires2 .*syntax#try (x1) (rule v1)$' <<<"$out" && echo "ok   a try directly in an Effect.fn body is a finding" || { echo "FAIL try in Effect.fn"; grep throw-or-try <<<"$out"; fail=1; }
+[ "$(grep -c '^[-+~] effect.throw-or-try-in-gen' <<<"$out")" == 2 ] && echo "ok   not inside Effect.try, Effect.tryPromise, a nested helper or a test" || { echo "FAIL rule 4 reported outside the generator body"; grep throw-or-try <<<"$out"; fail=1; }
+
 exit $fail

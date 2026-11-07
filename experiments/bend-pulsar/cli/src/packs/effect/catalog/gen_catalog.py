@@ -383,9 +383,15 @@ RULES = [
          says="throws or uses try in an Effect-first file outside its boundary, Effect code and interop callbacks",
          src="ED", file="ai-docs/src/01_effect/01_basics/10_creating-effects.ts", line=32,
          text="`Effect.try` wraps synchronous code that may throw."),
-    # Pack-gated (on wherever the pack is), so it is held until pulsar-research's generality
-    # check across Effect apps (#705): checked and cited here, not written to the catalog.
-    dict(id="effect.throw-or-try-in-gen", cls="exception-style", ctx_any=2, ctx_none=4 | 32, ver=1, held="#705 generality check",
+    # Pack-gated (on wherever the pack is, no effect_only needed). Shipped for 0.4.1 by the lead's
+    # ruling on the generality evidence (research/effect-pack-generality.md: class-15 constructs
+    # share a file with Effect.gen/Effect.fn in ~12 of 15 public Effect repos and both private
+    # corpora); precision decides, and below 0.8 it is held again with its false-positive causes.
+    # ctx 128 = directly in the wrapped function's own body: a throw in a helper, callback or async
+    # function nested in the generator is not reported (README known limits). Sampled at ctx_any 2
+    # (inherited by every nested function) it measured 8/20; the 12 false positives were all
+    # nested functions.
+    dict(id="effect.throw-or-try-in-gen", cls="exception-style", ctx_any=128, ctx_none=4 | 32, ver=1,
          says="throws or uses try inside Effect code, where a failure is yielded as a typed error instead",
          src="ED", file="LLMS.md", line=34, text="return yield* new FileProcessingError"),
     dict(id="effect.ambient-read-in-effect", cls="ambient-read", ctx_any=2, ctx_none=4, ver=1,

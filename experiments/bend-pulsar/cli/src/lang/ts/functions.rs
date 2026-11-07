@@ -682,10 +682,11 @@ impl<'s> Walker<'s> {
     }
 
     /// `CS.ctx` bits for a function: the enclosing function's, the test-file bit at the top,
-    /// its own async, and any wrapper call's bits for the function starting at `start`.
+    /// its own async, and any wrapper call's bits for the function starting at `start`. A wrapped
+    /// function also gets `DIRECT`, which a nested function never inherits.
     fn frame_ctx(&mut self, start: u32, is_async: bool) -> u8 {
         let inherited = match self.frames.last() {
-            Some(f) => f.ctx,
+            Some(f) => f.ctx & !ctx::DIRECT,
             None => self.file_ctx,
         };
         let wrapped = self
@@ -693,7 +694,8 @@ impl<'s> Walker<'s> {
             .iter()
             .position(|p| p.0 == start)
             .map_or(0, |i| self.pending_ctx.swap_remove(i).1);
-        inherited | wrapped | if is_async { ctx::ASYNC } else { 0 }
+        let direct = if wrapped != 0 { ctx::DIRECT } else { 0 };
+        inherited | wrapped | direct | if is_async { ctx::ASYNC } else { 0 }
     }
 
     fn leave(&mut self) {

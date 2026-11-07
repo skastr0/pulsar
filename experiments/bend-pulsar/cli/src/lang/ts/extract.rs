@@ -285,7 +285,7 @@ mod tests {
                 "decl sql fn=Some(0) type=None",
                 "yield* fn=Some(0) sym=Some(\"@effect/sql#SqlClient.SqlClient\")",
                 "decl typed fn=Some(0) type=Some(\"@effect/sql#SqlClient.SqlClient\")",
-                "call fn=Some(0) ctx=2 sym=Some(\"effect#Effect.runSync\")",
+                "call fn=Some(0) ctx=130 sym=Some(\"effect#Effect.runSync\")",
             ]
         );
     }
@@ -322,8 +322,9 @@ mod tests {
     #[test]
     fn syntax_sites_in_an_effect_only_file_carry_their_context() {
         // Bit 8 (the file is in effect_only scope). Function 8, the tryPromise callback, has the
-        // interop bit 32, and the generator (7) has bit 2, which the exception-style scope rule
-        // excludes, so no rule can fire there and their `async`, `try` and `throw` emit nothing.
+        // interop bit 32, so no rule can fire there and its `async` and `throw` emit nothing. The
+        // generator (7) has bit 2, which the exception-style scope rule excludes, and 128 (directly
+        // in a wrapped body), so its `try` and `throw` are sites for effect.throw-or-try-in-gen.
         let want = rows(&[
             (0, "syntax#async-fn", 1 | 8),
             (0, "syntax#await", 1 | 8),
@@ -333,6 +334,8 @@ mod tests {
             (2, "global#Promise.all", 8),
             (4, "syntax#member.catch", 8),
             (4, "global#Promise", 8),
+            (7, "syntax#try", 2 | 8 | 128),
+            (7, "syntax#throw", 2 | 8 | 128),
         ]);
         assert_eq!(promise_sites(PROMISES, 8), want);
     }
@@ -393,9 +396,22 @@ mod tests {
         let alloc = Allocator::default();
         let f = extract(&alloc, "a.ts", Path::new("a.ts"), PROMISES, &all_index(), 8 | ctx_test(), None).functions;
         // load and its callback are async; the generator and what it holds are Effect code; the
-        // tryPromise options are interop callbacks. The test bit is never in FC (TF says it).
-        let want: Vec<(u32, u8)> =
-            vec![(0, 9), (1, 9), (2, 8), (3, 8), (4, 8), (5, 8), (6, 8), (7, 10), (8, 1 | 2 | 8 | 32), (9, 2 | 8 | 32), (10, 10)];
+        // tryPromise options are interop callbacks. A function a wrapper takes (the generator and
+        // the two tryPromise options) also has 128, which the callback inside the generator (10)
+        // does not inherit. The test bit is never in FC (TF says it).
+        let want: Vec<(u32, u8)> = vec![
+            (0, 9),
+            (1, 9),
+            (2, 8),
+            (3, 8),
+            (4, 8),
+            (5, 8),
+            (6, 8),
+            (7, 2 | 8 | 128),
+            (8, 1 | 2 | 8 | 32 | 128),
+            (9, 2 | 8 | 32 | 128),
+            (10, 10),
+        ];
         assert_eq!(f.fn_ctx, want);
     }
 
@@ -405,8 +421,14 @@ mod tests {
 
     #[test]
     fn without_policy_no_syntax_site_is_emitted() {
-        // No bit 8: no shipped rule can fire on a construct, so only the Promise calls remain.
-        let want = rows(&[(2, "global#Promise.all", 0), (4, "global#Promise", 0)]);
+        // No bit 8: no effect_only rule can fire on a construct, so only the Promise calls and the
+        // generator body's `try` and `throw` remain (effect.throw-or-try-in-gen is pack-gated).
+        let want = rows(&[
+            (2, "global#Promise.all", 0),
+            (4, "global#Promise", 0),
+            (7, "syntax#try", 2 | 128),
+            (7, "syntax#throw", 2 | 128),
+        ]);
         assert_eq!(promise_sites(PROMISES, 0), want);
     }
 }

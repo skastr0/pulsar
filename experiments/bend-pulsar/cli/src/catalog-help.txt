@@ -99,6 +99,8 @@ CTX BITS (call sites)
   1 inside an async function   2 inside an Effect generator or Effect.fn   4 inside a test
   8 file in effect_only scope  16 file in boundary scope  32 inside an interop callback
   (2 and 32 come from a pack's wrappers; 8 and 16 only from the repo's policy)
+  128 directly in the body of a function a pack wrapper takes: that function's own frame only,
+      never a function nested in it (a callback inside an Effect.gen body does not have it)
 
 SYNTAX SYMBOLS  sym = "syntax#<name>": a language construct, emitted only where an active rule could fire
   await (also for await)  async-fn (in the async function itself)  throw  try

@@ -213,7 +213,7 @@ pub const BUILTIN: &[Entry] = &[
 ];
 
 /// The ctx bit names of FACTS.md (`CS.ctx`), for catalog rule conditions.
-const CTX_BITS: [(u32, &str); 7] = [
+const CTX_BITS: [(u32, &str); 8] = [
     (1, "inside an async function"),
     (2, "inside Effect code"),
     (4, "inside a test"),
@@ -221,6 +221,7 @@ const CTX_BITS: [(u32, &str); 7] = [
     (16, "in the [packs.effect] boundary scope"),
     (32, "inside an interop callback"),
     (64, "matched by method name only"),
+    (128, "directly in a pack wrapper's function body (not in a function nested in it)"),
 ];
 
 fn bits(mask: u32) -> String {

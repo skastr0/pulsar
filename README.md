@@ -87,6 +87,7 @@ The first run on a sha parses it. The result is cached per sha under `~/.pulsar/
 | `effect.promise-style-in-effect-scope`, `effect.exception-style-in-effect-scope` | async/await, promises, `throw` or `try` in an Effect-first file | Effect pack, with `[packs.effect]` scope lists |
 | `effect.internal-promise-bridge`, `effect.mixed-module` | an async function of the Effect-first scope bridged in through `Effect.promise`/`tryPromise` instead of converted; a file defining both Effect code and async functions | Effect pack, with `[packs.effect]` scope lists |
 | `effect.ambient-read-in-effect`, `effect.blocking-in-effect`, `effect.runtime-escape-in-effect` | clock, blocking host calls or runtime escapes inside Effect code | Effect pack |
+| `effect.throw-or-try-in-gen` | `throw` or `try` inside Effect code (an `Effect.gen` or `Effect.fn` body), where a failure is a typed error instead | Effect pack |
 | `effect.layer-cycle`, `effect.unprovided-service`, `effect.duplicate-builder`, `effect.hub-service` | problems in the Effect layer graph | Effect pack |
 | `cloudflare.query-in-loop` | a D1 or Durable Object SQL query run once per loop iteration, directly or through a function it calls within 2 call edges (test code excluded) | Cloudflare pack |
 | `cloudflare.hot-query-fan-out` | that finding in code a request, alarm or queue entry point reaches within 3 call edges | Cloudflare pack |
@@ -149,6 +150,7 @@ One policy per repo, committed in `.pulsar/`, and its fingerprint is printed wit
 - **Effect scope takes path prefixes, not globs.** `[packs.effect] effect_only` and `boundary` match like the lane scopes: a prefix ending in `/` is a directory, anything else is that file.
 - **`.then`, `.catch` and `.finally` on an imported binding are deliberately not flagged as promise style**, to keep `Effect.catch`-style APIs out.
 - **Constructs at module level, outside any function, are not yet sites** for the Effect style rules (fixed in 0.4.1).
+- **`effect.throw-or-try-in-gen` sees only the generator body itself.** A `throw` or `try` in a helper, callback or async function nested inside an `Effect.gen` or `Effect.fn` body is not reported. This is deliberate: the rule fires only where the failure could have been yielded as a typed error.
 - **Thresholds are conventions.** `core.cyclomatic` flags above 10, `core.nesting` above 3, `core.npath` above 200. The evidence for each is in [`experiments/bend-pulsar/research/thresholds.md`](experiments/bend-pulsar/research/thresholds.md) and is weaker than the numbers look. In 0.4.0 they are fixed in the engine's rules, not set by policy; `pulsar explain <rule>` prints each one.
 - **Not a score.** Pulsar does not rank repos, rate agents or blend signals.
 

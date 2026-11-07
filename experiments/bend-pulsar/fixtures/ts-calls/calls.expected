@@ -3,4 +3,4 @@ CS a global#Date.now loops=1 ctx=1
 CS a global#Date loops=0 ctx=1
 CS b effect#Effect.runPromise loops=0 ctx=0
 CS b effect#Effect.orDie loops=0 ctx=0
-CS c effect#Effect.runSync loops=0 ctx=2
+CS c effect#Effect.runSync loops=0 ctx=130

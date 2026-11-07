@@ -120,6 +120,9 @@ pub mod ctx {
     pub const EFFECT_ONLY: u8 = 8;
     /// The file is in the repo policy's `boundary` scope.
     pub const BOUNDARY: u8 = 16;
+    /// Directly in the body of a function a pack wrapper takes (`Effect.gen(function* ..)`): set on
+    /// that function's own frame only, never inherited by a function nested in it.
+    pub const DIRECT: u8 = 128;
 }
 
 /// `HD.shape` values (FACTS.md).
