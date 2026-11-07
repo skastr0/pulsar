@@ -54,6 +54,23 @@ err=$("$BIN" delta HEAD~1 HEAD --repo . --coverage "$T/lcov.info" 2>&1 >/dev/nul
 grep -q 'coverage reports=1' <<<"$err" && echo "ok   --coverage reads the worktree report" || { echo "FAIL --coverage"; echo "$err" | tail -3; fail=1; }
 "$BIN" delta HEAD~1 HEAD --repo . --coverage "$T/none.info" >/dev/null 2>&1; [ $? == 2 ] && echo "ok   missing --coverage path: exit 2" || { echo "FAIL missing coverage path"; fail=1; }
 
+# Trend lines: the same function with a larger measured value is `~ worsened`, the reverse `~ improved`
+# (measurement only: never counted in `added`, never exit 1).
+python3 - <<'PY' > m.ts
+print("export function tangled(x: number): number {\n  let r = 0")
+for i in range(13):
+    print(f"  if (x > {i}) r += {i}")
+print("  return r\n}")
+PY
+git add -A && git commit -qm "one more branch"
+out=$("$BIN" delta HEAD~1 HEAD --repo . 2>/dev/null); code=$?
+grep -q '^~ worsened [0-9a-f]* m.ts:1 tangled  cyclomatic 13 -> 14' <<<"$out" && grep -q 'worsened=1 improved=0' <<<"$out" && echo "ok   worsened: same key, value grew, old -> new" || { echo "FAIL worsened"; echo "$out" | head -4; fail=1; }
+[ "$code" == 0 ] && echo "ok   a trend is not a finding: exit 0" || { echo "FAIL trend changed the exit code ($code)"; fail=1; }
+out=$("$BIN" delta HEAD HEAD~1 --repo . 2>/dev/null)
+grep -q '^~ improved [0-9a-f]* m.ts:1 tangled  cyclomatic 14 -> 13' <<<"$out" && echo "ok   improved: reverse direction" || { echo "FAIL improved"; fail=1; }
+tj=$("$BIN" delta HEAD~1 HEAD --repo . --json 2>/dev/null | grep '"type":"trend"')
+grep -q '"change":"worsened"' <<<"$tj" && grep -q '"cyclomatic":{"old":13,"new":14}' <<<"$tj" && echo "ok   trend JSON carries old and new" || { echo "FAIL trend json"; echo "$tj" | head -2; fail=1; }
+
 # A Rust manifest cargo cannot read degrades the Rust graph: every output form must say so.
 D=$(mktemp -d); trap 'rm -rf "$T" "$D"' EXIT
 ( cd "$D" && git init -q . && git config user.email t@t && git config user.name t
