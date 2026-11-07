@@ -1,0 +1,15 @@
+# dogfood delta 2f9490e91f6fdd72a736d7fcf6ca06490907edeb 3bc70a5e8850dd54ad8d6eda5afe25a28d848e57 — 3bc70a5e8850dd54ad8d6eda5afe25a28d848e57
+# repo: /home/user/pulsar
+# 2026-11-07T11:11:02Z  fingerprint	sha256:5394b6d4d2acd50b240e6f0b6b2adc35fb448a16f070aaf811dad038b2497a02
+#
+# base=2f9490e91f6f head=3bc70a5e8850 added=0 removed=8 unchanged=84
+
+
+- core.cyclomatic eeb7a02a7e6cc9cf experiments/bend-pulsar/cli/src/delta.rs run  (removed)
+- core.cyclomatic 62e5dfcbd23942ef experiments/bend-pulsar/cli/src/lang/ts/extract.rs extract  (removed)
+- core.length 7d4d3fb6e915c2af experiments/bend-pulsar/cli/src/delta.rs evaluate  (removed)
+- core.length 9b5d8a1be0eeb1a9 experiments/bend-pulsar/cli/src/delta.rs run  (removed)
+- core.length a4bf6a61a7205381 experiments/bend-pulsar/cli/src/lang/ts/extract.rs extract  (removed)
+- core.nesting c9889e9f1976195f experiments/bend-pulsar/cli/src/lang/ts/extract.rs extract  (removed)
+- core.npath 32e33d2ba508c07c experiments/bend-pulsar/cli/src/delta.rs run  (removed)
+- core.npath 4273a420602817f8 experiments/bend-pulsar/cli/src/lang/ts/extract.rs extract  (removed)
