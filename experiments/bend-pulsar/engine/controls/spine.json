@@ -173,5 +173,89 @@
   "file": "Pipeline.bend",
   "old": "  match m:\n    case None{}:\n      None{}\n    case Some{ms}:\n      Some{List.append(",
   "new": "  match m:\n    case None{}:\n      Some{ls}\n    case Some{ms}:\n      Some{List.append("
+ },
+ {
+  "law": "engine_more_both",
+  "bug": "Engine.more drops the second detector's lines",
+  "file": "Pipeline.bend",
+  "old": "    case Some{x} Some{y}:\n      Some{List.append(&2, String, x, y)}",
+  "new": "    case Some{x} Some{y}:\n      Some{x}"
+ },
+ {
+  "law": "engine_more_refuses_left",
+  "bug": "Engine.more keeps the right lines when the left refused",
+  "file": "Pipeline.bend",
+  "old": "    case _ _:\n      None{}\n\ndef Engine.has_tag",
+  "new": "    case None{} b2:\n      b2\n    case _ _:\n      None{}\n\ndef Engine.has_tag"
+ },
+ {
+  "law": "engine_more_refuses_right",
+  "bug": "Engine.more keeps the left lines when the right refused",
+  "file": "Pipeline.bend",
+  "old": "    case _ _:\n      None{}\n\ndef Engine.has_tag",
+  "new": "    case a2 None{}:\n      a2\n    case _ _:\n      None{}\n\ndef Engine.has_tag"
+ },
+ {
+  "law": "engine_layers_on",
+  "bug": "Engine.ly1 ignores the switch",
+  "file": "Pipeline.bend",
+  "old": "def Engine.ly1(on: Bool, rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:\n  match on:\n    case True{}:\n      Engine.ly2(Y.Layers.decode(rows))",
+  "new": "def Engine.ly1(on: Bool, rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:\n  match on:\n    case True{}:\n      Some{Nil{}}"
+ },
+ {
+  "law": "engine_layers_run",
+  "bug": "Engine.ly2 skips Layers.run",
+  "file": "Pipeline.bend",
+  "old": "    case Some{lf}:\n      Engine.ly3(Y.Layers.run(lf))",
+  "new": "    case Some{lf}:\n      Some{Nil{}}"
+ },
+ {
+  "law": "engine_layers_lines",
+  "bug": "Engine.ly3 prints nothing",
+  "file": "Pipeline.bend",
+  "old": "    case Some{o}:\n      Some{Y.Layers.lines(o)}",
+  "new": "    case Some{o}:\n      Some{Nil{}}"
+ },
+ {
+  "law": "engine_layers_off",
+  "bug": "Engine.ly1 runs Layers with the pack off",
+  "file": "Pipeline.bend",
+  "old": "    case False{}:\n      Some{Nil{}}\n\ndef Engine.layers",
+  "new": "    case False{}:\n      Engine.ly2(Y.Layers.decode(rows))\n\ndef Engine.layers"
+ },
+ {
+  "law": "engine_classctx_on",
+  "bug": "Engine.cx1 ignores the switch",
+  "file": "Pipeline.bend",
+  "old": "    case True{}:\n      Engine.cx2(X.ClassCtx.decode(rows))",
+  "new": "    case True{}:\n      Some{Nil{}}"
+ },
+ {
+  "law": "engine_classctx_run",
+  "bug": "Engine.cx2 skips ClassCtx.run",
+  "file": "Pipeline.bend",
+  "old": "    case Some{cf}:\n      Engine.cx3(X.ClassCtx.run(cf))",
+  "new": "    case Some{cf}:\n      Some{Nil{}}"
+ },
+ {
+  "law": "engine_classctx_lines",
+  "bug": "Engine.cx3 prints nothing",
+  "file": "Pipeline.bend",
+  "old": "    case Some{fs}:\n      Some{X.ClassCtx.lines(fs)}",
+  "new": "    case Some{fs}:\n      Some{Nil{}}"
+ },
+ {
+  "law": "engine_classctx_off",
+  "bug": "Engine.cx1 runs ClassCtx with no rule on",
+  "file": "Pipeline.bend",
+  "old": "    case False{}:\n      Some{Nil{}}\n\ndef Engine.classctx",
+  "new": "    case False{}:\n      Engine.cx2(X.ClassCtx.decode(rows))\n\ndef Engine.classctx"
+ },
+ {
+  "law": "engine_all",
+  "bug": "Engine.all drops the class-in-context lines",
+  "file": "Pipeline.bend",
+  "old": "  Engine.more(Engine.more(Engine.lines(o, m), Engine.layers(rows)), Engine.classctx(rows))",
+  "new": "  Engine.more(Engine.lines(o, m), Engine.layers(rows))"
  }
 ]

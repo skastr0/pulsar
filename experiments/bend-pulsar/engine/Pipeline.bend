@@ -13,6 +13,9 @@ import Base
 import ../Graph.bend as G
 import ./Facts.bend as F
 import ./Scope.bend as S
+import ./Rows.bend as W
+import ./Layers.bend as Y
+import ./ClassCtx.bend as X
 
 type Out is Data:
   Out{files: U32, edges: U32, res: G.Res}
@@ -94,6 +97,86 @@ def Engine.lines(o: Maybe<Out>, m: Maybe<&2, List<&2, String>>) -> Maybe<List<&2
     case Some{x}:
       Engine.join(Report.lines(x), m)
 
-# The row tags the detectors read from Rows.bend: FN, CT (MetricsIn.bend).
+# Join two detectors' lines; None when either refused its facts. LAWS.bend P7-P9.
+def Engine.more(a: Maybe<List<&2, String>>, b: Maybe<List<&2, String>>) -> Maybe<List<&2, String>>:
+  match a b:
+    case Some{x} Some{y}:
+      Some{List.append(&2, String, x, y)}
+    case _ _:
+      None{}
+
+def Engine.has_tag(rows: List<&2, W.Row>, +t: U32) -> Bool:
+  match rows:
+    case Nil{}:
+      False{}
+    case Con{W.Row{tag, fs}, rest}:
+      Bool.or(U32.is_eq(tag, t), Engine.has_tag(rest, t))
+
+# ---- framework packs: on only when their facts are present ----------------------------------------
+# The Effect layer graph (Layers.bend) runs when the facts have an `E` header row,
+# which the CLI writes only when the Effect pack is active. LAWS.bend P10-P11.
+def Engine.tag_e() -> U32:
+  69
+
+def Engine.ly3(m: Maybe<Y.LOut>) -> Maybe<List<&2, String>>:
+  match m:
+    case None{}:
+      None{}
+    case Some{o}:
+      Some{Y.Layers.lines(o)}
+
+def Engine.ly2(m: Maybe<Y.LF>) -> Maybe<List<&2, String>>:
+  match m:
+    case None{}:
+      None{}
+    case Some{lf}:
+      Engine.ly3(Y.Layers.run(lf))
+
+def Engine.ly1(on: Bool, rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
+  match on:
+    case True{}:
+      Engine.ly2(Y.Layers.decode(rows))
+    case False{}:
+      Some{Nil{}}
+
+def Engine.layers(+rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
+  Engine.ly1(Engine.has_tag(rows, Engine.tag_e()), rows)
+
+# Class-in-context rules (ClassCtx.bend) run when there is an `RL` row: the CLI
+# writes RL only for rules that are on. LAWS.bend P12-P13.
+def Engine.tag_rl() -> U32:
+  21068
+
+def Engine.cx3(m: Maybe<List<&2, X.Fd>>) -> Maybe<List<&2, String>>:
+  match m:
+    case None{}:
+      None{}
+    case Some{fs}:
+      Some{X.ClassCtx.lines(fs)}
+
+def Engine.cx2(m: Maybe<X.CF>) -> Maybe<List<&2, String>>:
+  match m:
+    case None{}:
+      None{}
+    case Some{cf}:
+      Engine.cx3(X.ClassCtx.run(cf))
+
+def Engine.cx1(on: Bool, rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
+  match on:
+    case True{}:
+      Engine.cx2(X.ClassCtx.decode(rows))
+    case False{}:
+      Some{Nil{}}
+
+def Engine.classctx(+rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
+  Engine.cx1(Engine.has_tag(rows, Engine.tag_rl()), rows)
+
+# What pulsar-engine prints: the import graph and Metrics (P5-P6), then the
+# Effect layer lines, then the class-in-context lines. LAWS.bend P14.
+def Engine.all(o: Maybe<Out>, m: Maybe<&2, List<&2, String>>, +rows: List<&2, W.Row>) -> Maybe<List<&2, String>>:
+  Engine.more(Engine.more(Engine.lines(o, m), Engine.layers(rows)), Engine.classctx(rows))
+
+# The row tags the detectors read from Rows.bend: FN, CT, TF (MetricsIn.bend); E, SV,
+# LY, LQ, LP, LR, LC, LO, US (Layers.bend); CS, CL, RL (ClassCtx.bend).
 def Engine.row_tags() -> List<&2, U32>:
-  [17998, 17236]
+  [17998, 17236, 21574, 69, 21334, 19545, 19537, 19536, 19538, 19523, 19535, 21843, 17235, 17228, 21068]

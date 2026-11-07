@@ -5,9 +5,9 @@
 # All decisions live in the pure modules:
 #   Parse.bend     bytes -> facts           (reader, unproven)
 #   Facts.bend     facts -> import graph    (proven rules: Extract.value_kind, Resolve.add_edge2)
-#   Rows.bend      bytes -> FN/CT rows      (reader, unproven; other tags are not kept)
+#   Rows.bend      bytes -> detector rows   (reader, unproven; Engine.row_tags are kept)
 #   MetricsIn.bend rows -> Metrics          (decoder, unproven; Metrics-LAWS from Metrics.run)
-#   Pipeline.bend  findings lines           (Graph.analyze and Metrics; see LAWS.bend P1-P5)
+#   Pipeline.bend  findings lines           (Graph.analyze, Metrics, Layers, ClassCtx; LAWS.bend P1-P14)
 # This file reads the file in 64 KiB chunks, feeding each chunk to both readers,
 # so the bytes of the file are never all in memory, and prints the lines.
 
@@ -119,10 +119,10 @@ def Main.report(m: Maybe<List<&2, String>>) -> IO(Unit):
     case Some{ls}:
       Main.print_lines(ls)
 
-def Main.run_both(p: P.Parsed, rows: List<&2, W.Row>) -> IO(Unit):
+def Main.run_both(p: P.Parsed, +rows: List<&2, W.Row>) -> IO(Unit):
   match p:
     case P.Parsed{n, prods, fs}:
-      Main.report(L.Engine.lines(L.Pipeline.run(n, prods, fs), MI.MetricsIn.lines(M.Metrics.defaults(), rows)))
+      Main.report(L.Engine.all(L.Pipeline.run(n, prods, fs), MI.MetricsIn.lines(M.Metrics.defaults(), rows), rows))
 
 def Main.run_rows(m: Maybe<List<&2, W.Row>>, p: P.Parsed) -> IO(Unit):
   match m:

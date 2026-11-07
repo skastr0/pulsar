@@ -9,6 +9,15 @@ import ./Scope.bend as S
 import ./Pipeline.bend as L
 import ./Scope-PROOF.bend as ScopeProof
 import ./LAWS.bend as Laws
+import ./Rows.bend as W
+import ./Layers.bend as Y
+import ./ClassCtx.bend as X
+# One gate: importing every detector's proofs makes `bend engine/PROOF.bend --verdict`
+# re-check them all.
+import ./Layers-PROOF.bend as LayersProof
+import ./Metrics-PROOF.bend as MetricsProof
+import ./MetricsIn-PROOF.bend as MetricsInProof
+import ./ClassCtx-PROOF.bend as ClassCtxProof
 
 def Laws.kind_is_value_kind(hv, ht, form):
   {==}
@@ -94,4 +103,44 @@ def Laws.engine_refuses_graph(m):
   {==}
 
 def Laws.engine_refuses_metrics(o):
+  {==}
+
+def Laws.engine_more_both(a, b):
+  {==}
+
+def Laws.engine_more_refuses_left(b):
+  {==}
+
+def Laws.engine_more_refuses_right(a):
+  {==}
+
+def Laws.engine_layers_on(rows, on):
+  %Equal.sym(Bool, L.Engine.has_tag(rows, L.Engine.tag_e()), True{}, on) : {L.Engine.ly1(_, rows) == L.Engine.ly2(Y.Layers.decode(rows)) : Maybe<List<&2, String>>}
+  {==}
+
+def Laws.engine_layers_run(lf):
+  {==}
+
+def Laws.engine_layers_lines(o):
+  {==}
+
+def Laws.engine_layers_off(rows, off):
+  %Equal.sym(Bool, L.Engine.has_tag(rows, L.Engine.tag_e()), False{}, off) : {L.Engine.ly1(_, rows) == Some{Nil{}} : Maybe<List<&2, String>>}
+  {==}
+
+def Laws.engine_classctx_on(rows, on):
+  %Equal.sym(Bool, L.Engine.has_tag(rows, L.Engine.tag_rl()), True{}, on) : {L.Engine.cx1(_, rows) == L.Engine.cx2(X.ClassCtx.decode(rows)) : Maybe<List<&2, String>>}
+  {==}
+
+def Laws.engine_classctx_run(cf):
+  {==}
+
+def Laws.engine_classctx_lines(fs):
+  {==}
+
+def Laws.engine_classctx_off(rows, off):
+  %Equal.sym(Bool, L.Engine.has_tag(rows, L.Engine.tag_rl()), False{}, off) : {L.Engine.cx1(_, rows) == Some{Nil{}} : Maybe<List<&2, String>>}
+  {==}
+
+def Laws.engine_all(o, m, rows):
   {==}

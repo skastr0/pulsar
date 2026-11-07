@@ -17,6 +17,9 @@ import ../Graph.bend as G
 import ./Facts.bend as F
 import ./Scope.bend as S
 import ./Pipeline.bend as L
+import ./Rows.bend as W
+import ./Layers.bend as Y
+import ./ClassCtx.bend as X
 
 # ---- K. the fact-to-edge rule -----------------------------------------------------------------
 # `Facts.kind` asks the proven rule (Extract.value_kind) what a fact is. These
@@ -266,3 +269,68 @@ law engine_refuses_graph:
 law engine_refuses_metrics:
   for o: L.Out
   {L.Engine.lines(Some{o}, None{}) == None{} : Maybe<List<&2, String>>}
+
+# P7-P9. joining two detectors' lines: both accepted, their lines in order;
+# either refused, nothing.
+law engine_more_both:
+  for a: List<&2, String>
+  for b: List<&2, String>
+  {L.Engine.more(Some{a}, Some{b}) == Some{List.append(&2, String, a, b)} : Maybe<List<&2, String>>}
+
+law engine_more_refuses_left:
+  for b: Maybe<List<&2, String>>
+  {L.Engine.more(None{}, b) == None{} : Maybe<List<&2, String>>}
+
+law engine_more_refuses_right:
+  for a: List<&2, String>
+  {L.Engine.more(Some{a}, None{}) == None{} : Maybe<List<&2, String>>}
+
+# P10. with an `E` row, the layer lines are exactly Layers.lines of Layers.run
+# (Layers-LAWS E1-E3), and a refusal by decode or run refuses the run.
+law engine_layers_on:
+  for +rows: List<&2, W.Row>
+  for on: {L.Engine.has_tag(rows, L.Engine.tag_e()) == True{} : Bool}
+  {L.Engine.layers(rows) == L.Engine.ly2(Y.Layers.decode(rows)) : Maybe<List<&2, String>>}
+
+law engine_layers_run:
+  for lf: Y.LF
+  {L.Engine.ly2(Some{lf}) == L.Engine.ly3(Y.Layers.run(lf)) : Maybe<List<&2, String>>}
+
+law engine_layers_lines:
+  for o: Y.LOut
+  {L.Engine.ly3(Some{o}) == Some{Y.Layers.lines(o)} : Maybe<List<&2, String>>}
+
+# P11. with no `E` row the Effect pack is off: no layer lines.
+law engine_layers_off:
+  for +rows: List<&2, W.Row>
+  for off: {L.Engine.has_tag(rows, L.Engine.tag_e()) == False{} : Bool}
+  {L.Engine.layers(rows) == Some{Nil{}} : Maybe<List<&2, String>>}
+
+# P12. with an `RL` row, the class-in-context lines are ClassCtx.lines of
+# ClassCtx.run (ClassCtx-LAWS E1-E3).
+law engine_classctx_on:
+  for +rows: List<&2, W.Row>
+  for on: {L.Engine.has_tag(rows, L.Engine.tag_rl()) == True{} : Bool}
+  {L.Engine.classctx(rows) == L.Engine.cx2(X.ClassCtx.decode(rows)) : Maybe<List<&2, String>>}
+
+law engine_classctx_run:
+  for +cf: X.CF
+  {L.Engine.cx2(Some{cf}) == L.Engine.cx3(X.ClassCtx.run(cf)) : Maybe<List<&2, String>>}
+
+law engine_classctx_lines:
+  for +fs: List<&2, X.Fd>
+  {L.Engine.cx3(Some{fs}) == Some{X.ClassCtx.lines(fs)} : Maybe<List<&2, String>>}
+
+# P13. with no `RL` row no rule is on: no class-in-context lines.
+law engine_classctx_off:
+  for +rows: List<&2, W.Row>
+  for off: {L.Engine.has_tag(rows, L.Engine.tag_rl()) == False{} : Bool}
+  {L.Engine.classctx(rows) == Some{Nil{}} : Maybe<List<&2, String>>}
+
+# P14. what main.bend prints is the import graph and Metrics, then the layer
+# lines, then the class-in-context lines.
+law engine_all:
+  for o: Maybe<L.Out>
+  for m: Maybe<&2, List<&2, String>>
+  for +rows: List<&2, W.Row>
+  {L.Engine.all(o, m, rows) == L.Engine.more(L.Engine.more(L.Engine.lines(o, m), L.Engine.layers(rows)), L.Engine.classctx(rows)) : Maybe<List<&2, String>>}

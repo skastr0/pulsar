@@ -1,0 +1,6 @@
+# A consumed pack relation with a stray field: refused (exit 2), as Parse refuses a malformed I line.
+pulsar-facts 0
+N 1
+F 0 1
+E 1 1 0
+LY 0 1 abc
