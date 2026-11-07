@@ -260,14 +260,35 @@ pub struct ActiveGrowth {
     pub says: String,
 }
 
-/// The fan-out, constant-argument and hot-path rules policy and the active catalogs turned on, and the
-/// ones that stay off with the reason, so a rule that does not run is never silent.
+/// A call-edge rule that is on (`RE`): `[all, none, target_all, target_none]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveEdge {
+    pub id: String,
+    pub version: u32,
+    pub masks: [u32; 4],
+    pub says: String,
+}
+
+/// A module rule that is on (`RM`): `[all, none, also_all, also_none]`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ActiveModule {
+    pub id: String,
+    pub version: u32,
+    pub masks: [u32; 4],
+    pub says: String,
+}
+
+/// The fan-out, constant-argument, hot-path, unbounded-growth, call-edge and module rules policy and the active
+/// catalogs turned on, and the ones that stay off with the reason, so a rule that does not run is
+/// never silent.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Composites {
     pub fanouts: Vec<ActiveFanout>,
     pub konsts: Vec<ActiveKonst>,
     pub hots: Vec<ActiveHot>,
     pub growths: Vec<ActiveGrowth>,
+    pub edges: Vec<ActiveEdge>,
+    pub modules: Vec<ActiveModule>,
     /// `(rule id, why it is off)` for hot-path rules whose base rule is not on.
     pub inert: Vec<(String, String)>,
 }
@@ -362,9 +383,19 @@ impl Effective {
             for r in cat.growths.iter().filter(|r| !off(&r.id)) {
                 out.growths.push(ActiveGrowth { id: r.id.clone(), version: r.ver.parse().unwrap_or(1), depth: r.depth, says: r.says.clone() });
             }
+            for r in cat.edges.iter().filter(|r| !off(&r.id)) {
+                out.edges.push(ActiveEdge { id: r.id.clone(), version: r.ver.parse().unwrap_or(1), masks: [r.all, r.none, r.target_all, r.target_none], says: r.says.clone() });
+            }
+            for r in cat.modules.iter().filter(|r| !off(&r.id)) {
+                out.modules.push(ActiveModule { id: r.id.clone(), version: r.ver.parse().unwrap_or(1), masks: [r.all, r.none, r.also_all, r.also_none], says: r.says.clone() });
+            }
         }
         out.growths.sort_by(|a, b| a.id.cmp(&b.id));
         out.growths.dedup_by(|a, b| a.id == b.id);
+        out.edges.sort_by(|a, b| a.id.cmp(&b.id));
+        out.edges.dedup_by(|a, b| a.id == b.id);
+        out.modules.sort_by(|a, b| a.id.cmp(&b.id));
+        out.modules.dedup_by(|a, b| a.id == b.id);
         out.fanouts.sort_by(|a, b| a.id.cmp(&b.id));
         out.fanouts.dedup_by(|a, b| a.id == b.id);
         out.konsts.sort_by(|a, b| a.id.cmp(&b.id));
@@ -630,6 +661,8 @@ pub fn load(root: &Path, home: Option<&Path>, ev: &Evidence) -> Result<Effective
         .flat_map(|c| {
             let k = &c.loaded.catalog;
             k.rules.iter().map(|r| r.id.as_str()).chain(k.fanouts.iter().map(|r| r.id.as_str())).chain(k.konsts.iter().map(|r| r.id.as_str())).chain(k.hots.iter().map(|r| r.id.as_str())).chain(k.growths.iter().map(|r| r.id.as_str()))
+                .chain(k.edges.iter().map(|r| r.id.as_str()))
+                .chain(k.modules.iter().map(|r| r.id.as_str()))
         })
         .collect();
     for r in policy.rules.enable.iter().chain(&policy.rules.disable) {

@@ -645,6 +645,9 @@ impl<'s> Walker<'s> {
             self.out.entries.push((local, kind));
         }
         let frame_ctx = self.frame_ctx(span.start, is_async);
+        if self.index.is_some() && frame_ctx & !ctx::TEST != 0 {
+            self.out.fn_ctx.push((local, frame_ctx & !ctx::TEST));
+        }
         self.frames.push(Frame { local, blocks: BlockAcc::default(), next_node: 1, ctx: frame_ctx, loops: 0, stack: vec![0] });
         if is_async {
             self.syntax_site("async-fn");

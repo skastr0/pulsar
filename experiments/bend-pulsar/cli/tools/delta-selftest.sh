@@ -114,7 +114,8 @@ TS
   git add -A && git commit -qm "effect code" )
 out=$("$BIN" delta HEAD~1 HEAD --repo "$E" 2>/dev/null)
 grep -q '^+ effect.ambient-read-in-effect [0-9a-f]* a.ts:2 f  .*global#Date.now (x2) (rule v1)$' <<<"$out" && echo "ok   class-in-context: Date.now x2 inside Effect.gen is one finding for f" || { echo "FAIL class-in-context"; echo "$out" | head -3; fail=1; }
-[ "$(grep -c 'effect.ambient-read-in-effect' <<<"$out")" == 1 ] && echo "ok   the same call outside Effect code is not a finding" || { echo "FAIL outside-Effect call reported"; fail=1; }
+[ "$(grep -c '^[-+~] effect.ambient-read-in-effect' <<<"$out")" == 1 ] && echo "ok   the same call outside Effect code is not a finding" || { echo "FAIL outside-Effect call reported"; fail=1; }
+grep -q '^# metric effect.ambient-read-in-effect call sites: base=off head=2$' <<<"$out" && echo "ok   the rule's call-site count at head is a metric line (2 sites; off at base, which has no Effect dependency)" || { echo "FAIL rule count metric"; grep '^# metric' <<<"$out"; fail=1; }
 # The ~/.pulsar cache: a second run on unchanged shas reads derived entries instead of parsing, and
 # prints the same result; --no-cache bypasses it.
 "$BIN" delta HEAD~1 HEAD --repo . >/dev/null 2>&1   # warm

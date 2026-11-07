@@ -85,6 +85,7 @@ The first run on a sha parses it. The result is cached per sha under `~/.pulsar/
 | `graph.import-cycle` | files that reach each other through value imports | default |
 | `sql.unindexed-filter`, `sql.index-defeat`, `sql.offset-param`, `sql.dynamic-text`, `sql.fk-unindexed`, `sql.schema-drift` | query and schema problems in `.sql` files and in queries the code runs | opt-in |
 | `effect.promise-style-in-effect-scope`, `effect.exception-style-in-effect-scope` | async/await, promises, `throw` or `try` in an Effect-first file | Effect pack, with `[packs.effect]` scope lists |
+| `effect.internal-promise-bridge`, `effect.mixed-module` | an async function of the Effect-first scope bridged in through `Effect.promise`/`tryPromise` instead of converted; a file defining both Effect code and async functions | Effect pack, with `[packs.effect]` scope lists |
 | `effect.ambient-read-in-effect`, `effect.blocking-in-effect`, `effect.runtime-escape-in-effect` | clock, blocking host calls or runtime escapes inside Effect code | Effect pack |
 | `effect.layer-cycle`, `effect.unprovided-service`, `effect.duplicate-builder`, `effect.hub-service` | problems in the Effect layer graph | Effect pack |
 | `cloudflare.query-in-loop` | a D1 or Durable Object SQL query run once per loop iteration, directly or through a function it calls within 2 call edges (test code excluded) | Cloudflare pack |

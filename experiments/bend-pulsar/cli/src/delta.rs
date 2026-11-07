@@ -141,6 +141,9 @@ struct Eval {
     policy: Effective,
     degraded: Vec<Degraded>,
     coverage_reroot: Option<String>,
+    /// Per active class rule, its number of call-site findings (`RCXN`, 0 when it has no line):
+    /// a metric per sha, never a score.
+    counts: BTreeMap<String, u64>,
 }
 
 /// The files of `sha`, repo-relative, from its tree object (no checkout).
@@ -392,6 +395,33 @@ fn metric_findings(
     Ok(out)
 }
 
+/// The `RCXN` count of every active class rule, by rule id; a rule without a line has none.
+fn rule_counts(found: &Findings, rules: &[crate::policy::ActiveRule]) -> BTreeMap<String, u64> {
+    let mut out: BTreeMap<String, u64> = rules.iter().map(|r| (r.id.clone(), 0)).collect();
+    for &(rule_id, n) in &found.rcxn {
+        if let Some(r) = rules.get(rule_id as usize) {
+            out.insert(r.id.clone(), n);
+        }
+    }
+    out
+}
+
+/// One metric line per active class rule: its call-site count at base and at head (`off` when the
+/// rule was not on at base). A measurement, never a finding, and never part of the exit code.
+fn render_counts(before: &Eval, after: &Eval, as_json: bool) -> String {
+    let mut out = String::new();
+    for (rule, &h) in &after.counts {
+        let b = before.counts.get(rule).copied();
+        if as_json {
+            out.push_str(&format!("{}\n", json!({"type":"metric","rule":rule,"what":"call sites","base":b,"head":h})));
+        } else {
+            let base = b.map_or("off".to_string(), |n| n.to_string());
+            out.push_str(&format!("# metric {rule} call sites: base={base} head={h}\n"));
+        }
+    }
+    out
+}
+
 /// Class-in-context findings: a function that calls a symbol of a class an active rule forbids in
 /// that context. One finding per (rule, function, callee): several call sites of the same callee in
 /// one function are one finding with a count, so the key never depends on a per-run site id.
@@ -608,7 +638,7 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, discover
     if comp_dropped > 0 {
         degraded.push(Degraded {
             lane: "composites",
-            cause: format!("{comp_dropped} fan-out, constant-argument or hot-path finding(s) named a rule, function, symbol or base finding the CLI could not resolve and are not reported"),
+            cause: format!("{comp_dropped} fan-out, constant-argument, hot-path, call-edge or module finding(s) named a rule, function, symbol or base finding the CLI could not resolve and are not reported"),
         });
     }
     if dropped > 0 {
@@ -642,7 +672,8 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, discover
     for f in metric_findings(&found, &measures, &tables, &set.fn_keys, disabled, &eff.policy.rules.enable)? {
         insert(&mut findings, f, sha)?;
     }
-    Ok(Eval { findings, measures, timing, policy: eff, degraded, coverage_reroot })
+    let counts = rule_counts(&found, &active);
+    Ok(Eval { findings, measures, timing, policy: eff, degraded, coverage_reroot, counts })
 }
 
 /// The functions `pulsar delta` reports trends for, each as (head key, base measure, head measure):
@@ -918,7 +949,8 @@ pub fn run(a: &Args) -> Result<u8, String> {
     let engine = engine::locate()?;
     let scratch = Scratch::new("engine")?;
     let diff = compare(&before, &after, &renames, a.trend, &|rows, name| delta_engine::run(&engine, rows, &scratch.0, name))?;
-    print!("{}", if a.json { render_json(&diff, &after, &base, &head) } else { render_text(&diff, &after, &base, &head) });
+    let body = if a.json { render_json(&diff, &after, &base, &head) } else { render_text(&diff, &after, &base, &head) };
+    print!("{}{body}", render_counts(&before, &after, a.json));
     Ok(if diff.added.is_empty() { 0 } else { 1 })
 }
 

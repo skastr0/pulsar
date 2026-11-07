@@ -28,6 +28,12 @@ pub struct Findings {
     pub kx: Vec<Kx>,
     /// `HX`: hot-path findings (`pulsar-hot 0`).
     pub hx: Vec<Hx>,
+    /// `RCXN rule n`: the number of `RCX` findings of each class rule that has any.
+    pub rcxn: Vec<(u32, u64)>,
+    /// `ECX rule site fn target`: call-edge findings (`pulsar-fnctx 0`); `callee` is the target function.
+    pub ecx: Vec<Rcx>,
+    /// `FMX rule file`: module findings (`pulsar-fnctx 0`).
+    pub fmx: Vec<(u32, u32)>,
     /// `UX`: untested data access (`pulsar-untested 0`).
     pub ux: Vec<Ux>,
     /// `GX`: unbounded growth (`pulsar-grow 0`).
@@ -295,7 +301,7 @@ pub fn parse(text: &str) -> Result<Findings, String> {
             section = match name {
                 "findings" | "classctx" => name,
                 "layers" => name,
-                "sql" | "fanout" | "konst" | "hot" | "untested" | "grow" => name,
+                "sql" | "fanout" | "konst" | "hot" | "untested" | "grow" | "fnctx" => name,
                 _ => "other",
             };
             if section == "findings" {
@@ -387,6 +393,28 @@ pub fn parse(text: &str) -> Result<Findings, String> {
                 let mut n = || num(it.next().ok_or("RCX needs rule site fn callee")?).map(|v| v as u32);
                 let (rule, site, fn_id, callee) = (n()?, n()?, n()?, n()?);
                 f.rcx.push(Rcx { rule, site, fn_id, callee });
+            }
+            "RCXN" => {
+                let rule = num(it.next().ok_or("RCXN needs rule n")?)? as u32;
+                let n = num(it.next().ok_or("RCXN needs rule n")?)?;
+                f.rcxn.push((rule, n));
+            }
+            "ECX" | "FMX" | "FNCS" if section != "fnctx" => return Err(format!("{tag} outside the `pulsar-fnctx 0` section")),
+            "ECX" => {
+                let mut n = || num(it.next().ok_or("ECX needs rule site fn target")?).map(|v| v as u32);
+                let (rule, site, fn_id, callee) = (n()?, n()?, n()?, n()?);
+                f.ecx.push(Rcx { rule, site, fn_id, callee });
+            }
+            "FMX" => {
+                let mut n = || num(it.next().ok_or("FMX needs rule file")?).map(|v| v as u32);
+                let (rule, file) = (n()?, n()?);
+                f.fmx.push((rule, file));
+            }
+            "FNCS" => {
+                let n = num(it.next().ok_or("FNCS without a count")?)? as usize;
+                if n != f.ecx.len() + f.fmx.len() {
+                    return Err(format!("FNCS says {n} but {} ECX and FMX lines came before it", f.ecx.len() + f.fmx.len()));
+                }
             }
             "NX" | "KX" | "HX" => {
                 let want = match tag { "NX" => "fanout", "KX" => "konst", _ => "hot" };
@@ -496,6 +524,18 @@ mod tests {
         assert_eq!(f.rcx, vec![Rcx { rule: 0, site: 3, fn_id: 2, callee: 7 }, Rcx { rule: 1, site: 4, fn_id: 2, callee: 8 }]);
         assert!(parse("pulsar-findings 0\npulsar-classctx 0\nRCX 0 3 2 7\nRCXS 2\n").unwrap_err().contains("RCXS"));
         assert!(parse("pulsar-findings 0\nRCX 0 3 2\n").unwrap_err().contains("RCX needs"));
+        let f = parse("pulsar-findings 0\npulsar-classctx 0\nRCX 0 3 2 7\nRCX 0 4 2 7\nRCXN 0 2\nRCXS 2\n").unwrap();
+        assert_eq!(f.rcxn, vec![(0, 2)]);
+    }
+
+    #[test]
+    fn parses_the_function_context_section() {
+        let t = "pulsar-findings 0\npulsar-fnctx 0\nECX 5 10 3 0\nECX 5 13 3 2\nFMX 6 0\nFNCS 3\n";
+        let f = parse(t).unwrap();
+        assert_eq!(f.ecx, vec![Rcx { rule: 5, site: 10, fn_id: 3, callee: 0 }, Rcx { rule: 5, site: 13, fn_id: 3, callee: 2 }]);
+        assert_eq!(f.fmx, vec![(6, 0)]);
+        assert!(parse("pulsar-findings 0\npulsar-fnctx 0\nFMX 6 0\nFNCS 2\n").unwrap_err().contains("FNCS says 2"));
+        assert!(parse("pulsar-findings 0\nFMX 6 0\n").unwrap_err().contains("outside"));
     }
 
     #[test]

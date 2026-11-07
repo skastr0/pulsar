@@ -237,6 +237,15 @@ fn push_composites(w: &mut FactWriter, c: &crate::policy::Composites) {
     for (n, r) in c.growths.iter().enumerate() {
         w.push(Rel::Rg, &[n as u32, r.depth]);
     }
+    // `RE` and `RM`: call-edge and module rules, numbered the same way.
+    for (n, r) in c.edges.iter().enumerate() {
+        let [all, none, ta, tn] = r.masks;
+        w.push(Rel::Re, &[n as u32, all, none, ta, tn]);
+    }
+    for (n, r) in c.modules.iter().enumerate() {
+        let [all, none, ba, bn] = r.masks;
+        w.push(Rel::Rm, &[n as u32, all, none, ba, bn]);
+    }
 }
 
 /// `N`, `F` and `K` for every file.
@@ -406,6 +415,8 @@ fn push_functions(w: &mut FactWriter, mut per: Vec<Option<FileOut>>, tables: &mu
     let mut fn_keys = Vec::new();
     let mut base = 0u32;
     for (file, slot) in per.iter_mut().enumerate() {
+        // Per-function ctx bits (FC), taken before the destructure below.
+        let mut fn_ctx = slot.as_mut().map(|o| std::mem::take(&mut o.fns.fn_ctx)).unwrap_or_default();
         let Some(FileOut { fns: FileFns { fns, mut ct, mut ops, mut branches, entries, blocks, .. }, tests }) = slot.take() else { continue };
         let count = fns.len() as u32;
         for (local, f) in fns.into_iter().enumerate() {
@@ -441,6 +452,10 @@ fn push_functions(w: &mut FactWriter, mut per: Vec<Option<FileOut>>, tables: &mu
         }
         for (local, kind) in &entries {
             w.push(Rel::Ep, &[base + local, *kind as u32]);
+        }
+        fn_ctx.sort_unstable();
+        for (local, c) in &fn_ctx {
+            w.push(Rel::Fc, &[base + local, file as u32, *c as u32]);
         }
         for r in &blocks.bl {
             w.push(Rel::Bl, &[base + r[0], r[1], r[2]]);

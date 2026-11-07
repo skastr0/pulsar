@@ -255,6 +255,9 @@ pub struct FileFns {
     pub unresolved: Vec<(u32, u8)>,
     /// `(fn_local, kind)`: functions a catalog names as entry points (`EP`).
     pub entries: Vec<(u32, u8)>,
+    /// `(fn_local, ctx)`: the `CS` ctx bits in force in a function, test bit excluded, for the
+    /// functions with any (`FC`). Only a lane with an active catalog fills it.
+    pub fn_ctx: Vec<(u32, u8)>,
 }
 
 /// FNV-1a 64 over parts separated by a zero byte (same constants as the file key).

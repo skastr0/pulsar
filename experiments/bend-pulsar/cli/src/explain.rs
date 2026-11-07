@@ -246,7 +246,20 @@ fn render_catalog(cat: &catalog::Catalog, r: &catalog::Rule) -> String {
     )
 }
 
-/// A fan-out, constant-argument or hot-path rule of a catalog: what it is and every threshold in it.
+/// Every bit of `all` and none of `none`, in words.
+fn all_none(all: u32, none: u32) -> String {
+    let names = |m: u32| CTX_BITS.iter().filter(|(b, _)| m & b != 0).map(|(_, n)| *n).collect::<Vec<_>>().join(" and ");
+    let text = match (all, none) {
+        (0, 0) => "anywhere".into(),
+        (a, 0) => names(a),
+        (0, n) => format!("never {}", bits(n)),
+        (a, n) => format!("{}; never {}", names(a), bits(n)),
+    };
+    format!("[{text}]")
+}
+
+/// A fan-out, constant-argument, hot-path, call-edge or module rule of a catalog: what it is and
+/// every threshold in it.
 fn render_composite(cat: &catalog::Catalog, id: &str) -> Option<String> {
     let (ver, says, at, doc, kind, threshold, laws, example) = if let Some(r) = cat.fanouts.iter().find(|r| r.id == id) {
         let none = if r.none == 0 { String::new() } else { format!(", never when the site is {}", bits(r.none)) };
@@ -269,6 +282,20 @@ fn render_composite(cat: &catalog::Catalog, id: &str) -> Option<String> {
             format!("depth = {} (an entry point reaches the inserting function within {} call edge{}); the read is a SELECT with no LIMIT and no key of the table bound by equality or IN", r.depth, r.depth, if r.depth == 1 { "" } else { "s" }),
             "engine/Grow-LAWS.bend: the findings are exactly the (read, insert) triples, and the insert is reached from an entry point",
             "SELECT * FROM events with no LIMIT, in code that also runs INSERT INTO events from a request handler".to_string(),
+        )
+    } else if let Some(r) = cat.edges.iter().find(|r| r.id == id) {
+        (
+            r.ver.as_str(), r.says.as_str(), r.at.as_str(), r.doc.as_str(), "call-edge",
+            format!("a call from a site {} to a repo function {}", all_none(r.all, r.none), all_none(r.target_all, r.target_none)),
+            "engine/FnCtx-LAWS.bend: nc_erule_sound, nc_erule_complete",
+            "such a call, reported once per (caller, callee) with its site count".to_string(),
+        )
+    } else if let Some(r) = cat.modules.iter().find(|r| r.id == id) {
+        (
+            r.ver.as_str(), r.says.as_str(), r.at.as_str(), r.doc.as_str(), "module",
+            format!("a file holding a function {} and a function {}", all_none(r.all, r.none), all_none(r.also_all, r.also_none)),
+            "engine/FnCtx-LAWS.bend: nc_mrule_sound, nc_mrule_complete",
+            "one file holding both kinds of function".to_string(),
         )
     } else if let Some(r) = cat.hots.iter().find(|r| r.id == id) {
         (
@@ -327,6 +354,10 @@ fn catalog_family(id: &str) -> String {
             "hot-path"
         } else if c.growths.iter().any(|r| r.id == id) {
             "unbounded-growth"
+        } else if c.edges.iter().any(|r| r.id == id) {
+            "call-edge"
+        } else if c.modules.iter().any(|r| r.id == id) {
+            "module"
         } else {
             continue;
         };

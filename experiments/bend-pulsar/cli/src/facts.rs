@@ -53,6 +53,7 @@ pub enum Rel {
     Ce,
     Cu,
     Ep,
+    Fc,
     Bl,
     Bw,
     Br,
@@ -74,6 +75,8 @@ pub enum Rel {
     Rh,
     Rg,
     Ru,
+    Re,
+    Rm,
     Ds,
     Dt,
     Dc,
@@ -90,7 +93,7 @@ pub enum Rel {
 }
 
 impl Rel {
-    pub const ALL: [Rel; 74] = [
+    pub const ALL: [Rel; 77] = [
         Rel::N,
         Rel::F,
         Rel::K,
@@ -131,6 +134,7 @@ impl Rel {
         Rel::Ce,
         Rel::Cu,
         Rel::Ep,
+        Rel::Fc,
         Rel::Bl,
         Rel::Bw,
         Rel::Br,
@@ -152,6 +156,8 @@ impl Rel {
         Rel::Rh,
         Rel::Rg,
         Rel::Ru,
+        Rel::Re,
+        Rel::Rm,
         Rel::Ds,
         Rel::Dt,
         Rel::Dc,
@@ -209,6 +215,7 @@ impl Rel {
             Rel::Ce => "CE",
             Rel::Cu => "CU",
             Rel::Ep => "EP",
+            Rel::Fc => "FC",
             Rel::Bl => "BL",
             Rel::Bw => "BW",
             Rel::Br => "BR",
@@ -230,6 +237,8 @@ impl Rel {
             Rel::Rh => "RH",
             Rel::Rg => "RG",
             Rel::Ru => "RU",
+            Rel::Re => "RE",
+            Rel::Rm => "RM",
             Rel::Ds => "DS",
             Rel::Dt => "DT",
             Rel::Dc => "DC",
@@ -252,9 +261,9 @@ impl Rel {
             Rel::N | Rel::M | Rel::Sy | Rel::Tf | Rel::L | Rel::Lo | Rel::Sr | Rel::Id | Rel::Ru => 1,
             Rel::F | Rel::U | Rel::H | Rel::A | Rel::Cl | Rel::Lq | Rel::Us | Rel::Ln | Rel::If | Rel::Lr | Rel::Lc | Rel::Ds | Rel::Ep
             | Rel::Ie | Rel::Ib | Rel::Iu | Rel::Rg => 2,
-            Rel::K | Rel::Fk | Rel::C | Rel::Cfn | Rel::Vn | Rel::Cv | Rel::Hd | Rel::E | Rel::Sv | Rel::Ly | Rel::Lp | Rel::Rt | Rel::Mk | Rel::Lw | Rel::Co | Rel::Cb | Rel::Im | Rel::Cu | Rel::Dt | Rel::Dp | Rel::Di | Rel::Dx | Rel::Df | Rel::Qt | Rel::Bl | Rel::Bw | Rel::Br | Rel::Al | Rel::Rk => 3,
+            Rel::K | Rel::Fk | Rel::C | Rel::Cfn | Rel::Vn | Rel::Cv | Rel::Hd | Rel::E | Rel::Sv | Rel::Ly | Rel::Lp | Rel::Rt | Rel::Mk | Rel::Lw | Rel::Co | Rel::Cb | Rel::Im | Rel::Cu | Rel::Dt | Rel::Dp | Rel::Di | Rel::Dx | Rel::Df | Rel::Qt | Rel::Bl | Rel::Bw | Rel::Br | Rel::Al | Rel::Rk | Rel::Fc => 3,
             Rel::Fn | Rel::Ct | Rel::Cf | Rel::Rl | Rel::Rf | Rel::Rh | Rel::Cm | Rel::Et | Rel::Dc | Rel::Dg | Rel::Qu | Rel::Qd => 4,
-            Rel::I | Rel::Cs | Rel::Bc | Rel::Hr | Rel::Vt => 5,
+            Rel::I | Rel::Cs | Rel::Bc | Rel::Hr | Rel::Vt | Rel::Re | Rel::Rm => 5,
             Rel::Ce | Rel::Qs => 6,
         }
     }

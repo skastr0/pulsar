@@ -116,7 +116,40 @@ law run_refuses_invalid:
   {X.ClassCtx.run(cf) == None{} : Maybe<List<&2, X.Fd>>}
 
 # E3. the printed lines are built from the findings and nothing else: the
-# header, one RCX line per finding in order, and the count.
+# header, one RCX line per finding in order, one RCXN line per rule of
+# Cx.frules (X6), with the length of that rule's findings (X4, X5), and the count.
 law lines_shape:
   for +fs: List<&2, X.Fd>
-  {X.ClassCtx.lines(fs) == Con{"pulsar-classctx 0", List.append(&2, String, X.CRep.fd(fs), Con{X.CRep.summary(fs), Nil{}})} : List<&2, String>}
+  {X.ClassCtx.lines(fs) == Con{"pulsar-classctx 0", List.append(&2, String, X.CRep.fd(fs), List.append(&2, String, X.CRep.counts(X.Cx.counts(X.Cx.frules(fs), fs)), Con{X.CRep.summary(fs), Nil{}}))} : List<&2, String>}
+
+# ---- per-rule counts (#705 rule 5) ---------------------------------------------------------------
+# X4. the findings counted for rule r are findings of r.
+law of_rule_sound:
+  for +fs: List<&2, X.Fd>
+  for +r: U32
+  for +r2: U32
+  for +site: U32
+  for +fn: U32
+  for +callee: U32
+  for h: FdAt(X.Cx.of_rule(fs, r), r2, site, fn, callee)
+  TL.And({r2 == r : U32}, FdAt(fs, r2, site, fn, callee))
+
+# X5. every finding of rule r is counted for r.
+law of_rule_complete:
+  for +fs: List<&2, X.Fd>
+  for +r: U32
+  for +site: U32
+  for +fn: U32
+  for +callee: U32
+  for h: FdAt(fs, r, site, fn, callee)
+  FdAt(X.Cx.of_rule(fs, r), r, site, fn, callee)
+
+# X6. every rule with a finding gets a count line, so a rule without one has no finding.
+law rcxn_rules_complete:
+  for +fs: List<&2, X.Fd>
+  for +r: U32
+  for +site: U32
+  for +fn: U32
+  for +callee: U32
+  for h: FdAt(fs, r, site, fn, callee)
+  TL.Mem(X.Cx.frules(fs), r)

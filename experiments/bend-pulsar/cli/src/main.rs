@@ -261,6 +261,14 @@ fn cmd_policy(args: &[String]) -> Result<(), String> {
     for (n, r) in c.hots.iter().enumerate() {
         println!("rule\t{}\tv{}\thot rh={n} lane={} base={} ({}) depth={}", r.id, r.version, r.lane, r.base, r.base_id, r.depth);
     }
+    for (n, r) in c.edges.iter().enumerate() {
+        let [all, none, ta, tn] = r.masks;
+        println!("rule\t{}\tv{}\tedge re={n} all={all} none={none} target_all={ta} target_none={tn}", r.id, r.version);
+    }
+    for (n, r) in c.modules.iter().enumerate() {
+        let [all, none, ba, bn] = r.masks;
+        println!("rule\t{}\tv{}\tmodule rm={n} all={all} none={none} also_all={ba} also_none={bn}", r.id, r.version);
+    }
     for (id, why) in &c.inert {
         println!("rule-off\t{id}\t{why}");
     }

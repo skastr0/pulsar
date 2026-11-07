@@ -1,6 +1,7 @@
 //! Fan-out, constant-argument and hot-path findings: the engine's `pulsar-fanout 0`,
 //! `pulsar-konst 0` and `pulsar-hot 0` sections (FACTS.md "Fan-out rules", "Constant-argument
 //! rules", "Hot-path composites") as findings.
+//! Also the call-edge and module findings of `pulsar-fnctx 0` (FACTS.md "Function-context rules").
 //!
 //! Site and function ids are per run, so a finding is keyed by what they stand for: the rule, the
 //! function's `FK` key and the callee symbol (or the reached function, or the query's table and
@@ -50,6 +51,17 @@ pub fn findings(found: &Findings, tables: &SideTables, files: &[String], keys: &
     }
     for ((rule, fn_id, d), sites) in hot {
         push(hot_path(&cx, comp, rule, fn_id, d, sites));
+    }
+    // Call edges: one finding per (rule, function, target function), with the number of sites.
+    let mut edge: BTreeMap<(u32, u32, u32), usize> = BTreeMap::new();
+    for x in &found.ecx {
+        *edge.entry((x.rule, x.fn_id, x.callee)).or_default() += 1;
+    }
+    for ((rule, fn_id, target), sites) in edge {
+        push(call_edge(&cx, comp, rule, fn_id, target, sites));
+    }
+    for &(rule, file) in &found.fmx {
+        push(module(&cx, comp, rule, file));
     }
     (out, dropped + unjoined)
 }
@@ -184,6 +196,26 @@ fn constant(cx: &Cx, comp: &Composites, rule: u32, fn_id: u32, callee: u32, pos:
     Some(f.at_line(at.line))
 }
 
+fn call_edge(cx: &Cx, comp: &Composites, rule: u32, fn_id: u32, target: u32, sites: usize) -> Option<Finding> {
+    let r = comp.edges.get(rule as usize)?;
+    let at = cx.place(fn_id)?;
+    let to = cx.place(target)?;
+    let callee = format!("{}:{} {}", to.path, to.line, to.chain);
+    let text = format!("{}: calls {callee} (x{sites})", r.says);
+    let evidence = json!({ "callee": callee, "sites": sites, "says": r.says });
+    let f = Finding::new(catalog_rule(&r.id, r.version), vec![at.subject, to.subject], at.path, Some(at.chain), text, evidence);
+    Some(f.at_line(at.line))
+}
+
+fn module(cx: &Cx, comp: &Composites, rule: u32, file: u32) -> Option<Finding> {
+    let r = comp.modules.get(rule as usize)?;
+    let path = cx.files.get(file as usize)?.clone();
+    let subject = Subject::File { key: crate::facts::stable_key(&path), path: path.clone() };
+    let text = format!("{}: {path}", r.says);
+    let f = Finding::new(catalog_rule(&r.id, r.version), vec![subject], path, None, text, json!({ "says": r.says }));
+    Some(f.at_line(1))
+}
+
 /// What a hot base finding is about, comparable so equal findings group: the base rule, and the
 /// symbol, function or query place it names.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -251,6 +283,8 @@ mod tests {
     use crate::engine::{Gx, Hx, Sql, Sqx, Ux};
     use crate::facts::FnEntry;
     use crate::policy::{ActiveFanout, ActiveGrowth, ActiveHot, ActiveKonst};
+    use crate::engine::Rcx;
+    use crate::policy::{ActiveEdge, ActiveModule};
 
     fn tables() -> SideTables {
         let f = |file, chain: &str| FnEntry { file, start_line: 3, end_line: 9, parent: None, kind: 0, chain: chain.into() };
@@ -270,6 +304,8 @@ mod tests {
                 ActiveHot { id: "t.hot-unindexed".into(), version: 1, lane: 1, base: 4, base_id: "sql.unindexed-filter".into(), depth: 3, says: "unindexed query on a hot path".into() },
             ],
             growths: vec![ActiveGrowth { id: "t.unbounded".into(), version: 1, depth: 3, says: "reads a growing table in full".into() }],
+            edges: vec![],
+            modules: vec![],
             inert: vec![],
         }
     }
@@ -323,6 +359,23 @@ mod tests {
             k
         };
         assert_eq!(keys(&a), keys(&b));
+    }
+
+    #[test]
+    fn call_edges_group_by_function_and_target_and_modules_name_the_file() {
+        let mut c = comp();
+        c.edges = vec![ActiveEdge { id: "t.bridge".into(), version: 1, masks: [40, 20, 9, 16], says: "bridges".into() }];
+        c.modules = vec![ActiveModule { id: "t.mixed".into(), version: 1, masks: [10, 52, 9, 54], says: "mixes".into() }];
+        let f = Findings {
+            ecx: vec![Rcx { rule: 0, site: 4, fn_id: 0, callee: 1 }, Rcx { rule: 0, site: 5, fn_id: 0, callee: 1 }, Rcx { rule: 0, site: 6, fn_id: 0, callee: 2 }],
+            fmx: vec![(0, 1), (3, 0)],
+            ..Findings::default()
+        };
+        let (out, dropped) = findings(&f, &tables(), &["a.ts".to_string(), "b.ts".to_string()], &[11, 12, 13], &c);
+        let texts: Vec<String> = out.iter().map(|f| format!("{} {}", f.rule.id, f.evidence_text)).collect();
+        assert_eq!(texts, vec!["t.bridge bridges: calls a.ts:3 load (x2)", "t.bridge bridges: calls b.ts:3 other (x1)", "t.mixed mixes: b.ts"], "{texts:?}");
+        // FMX of rule 3 names no active module rule: counted, never dropped silently.
+        assert_eq!(dropped, 1);
     }
 
     #[test]

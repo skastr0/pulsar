@@ -352,6 +352,25 @@ for sym, src, file, export in [
 # ctx bits (FACTS.md, CS): 2 = pack-defined effect context, 4 = inside a test.
 # Each cite is the doc line that says the class does not belong in Effect code;
 # the generator checks that the line holds `text`.
+# #705 rules 2 and 3 judge functions by their own ctx (FC, engine/FnCtx.bend). Both need bit 8,
+# so neither fires without the repo's effect_only policy.
+#   effect.internal-promise-bridge (edges): a call from an interop callback in an Effect-first file
+#     to an async repo function that is itself in the Effect-first scope and outside the boundary:
+#     convert the callee instead of bridging it. A callee outside effect_only is on the promise
+#     side the policy declares, and bridging it is interop, so target_all needs 8 as well as 1.
+#   effect.mixed-module (modules): an Effect-first file holding Effect code and an async function
+#     that is neither Effect code nor an interop callback.
+FN_RULES = [
+    dict(id="effect.internal-promise-bridge", table="edges", masks=dict(all=8 | 32, none=4 | 16, target_all=1 | 8, target_none=16), ver=1,
+         says="bridges an async function of the Effect-first scope into Effect through an interop callback, instead of converting the callee",
+         src="ED", file="ai-docs/src/01_effect/01_basics/10_creating-effects.ts", line=45,
+         text="`Effect.tryPromise` wraps Promise-based APIs that can reject or throw."),
+    dict(id="effect.mixed-module", table="modules", masks=dict(all=8 | 2, none=4 | 16 | 32, also_all=8 | 1, also_none=2 | 4 | 16 | 32), ver=1,
+         says="defines both Effect code and async functions in one Effect-first module",
+         src="ED", file="LLMS.md", line=53,
+         text="When writing reusable functions that return an Effect, use `Effect.fn`"),
+]
+
 RULES = [
     # #705, Effect-first scopes. Bit 8 = the file is in the repo's `[packs.effect] effect_only`, 16 =
     # in its `boundary`; only repo policy sets them, so neither rule fires without it. 32 = an
@@ -677,6 +696,23 @@ def main(out_dir, check=False):
         eff.append(f"  {{ id = {q(r['id'])}, class = {q(r['cls'])}, ctx_any = {r['ctx_any']}, ctx_none = {r['ctx_none']}, "
                    f"says = {q(r['says'])}, ver = \"{r['ver']}\", at = {q(prefix + r['file'] + ':' + str(r['line']))}, doc = {q(doc)} }},")
     eff.append("]")
+    for table in ("edges", "modules"):
+        eff.append("")
+        eff.append(f"# {table} ({'RE' if table == 'edges' else 'RM'}): masks over function ctx (FC); see `pulsar catalog --help`.")
+        eff.append("# ctx 1 = async, 2 = Effect code, 4 = test, 8 = effect_only, 16 = boundary, 32 = interop callback.")
+        eff.append(f"{table} = [")
+        for r in sorted((r for r in FN_RULES if r["table"] == table), key=lambda r: r["id"]):
+            root, prefix = SRC[r["src"]]
+            ln = lines_of(f"{root}/{r['file']}")
+            got = ln[r["line"] - 1] if r["line"] <= len(ln) else ""
+            if r["text"] not in got:
+                ERRORS.append(f"rule {r['id']}: {r['file']}:{r['line']} does not hold the cited text")
+                continue
+            doc = re.sub(r"^\s*(//|\*|#)?\s*", "", got).strip().replace("\\", "\\\\").replace('"', '\\"')
+            masks = ", ".join(f"{k} = {v}" for k, v in r["masks"].items())
+            eff.append(f"  {{ id = {q(r['id'])}, {masks}, says = {q(r['says'])}, ver = \"{r['ver']}\", "
+                       f"at = {q(prefix + r['file'] + ':' + str(r['line']))}, doc = {q(doc)} }},")
+        eff.append("]")
 
     plat = header(
         "platform-node", "Platform pack catalog: Node.js-only runtime APIs. Library data, not a core default.",

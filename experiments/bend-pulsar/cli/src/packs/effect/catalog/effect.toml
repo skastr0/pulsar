@@ -279,3 +279,15 @@ rules = [
   { id = "effect.promise-style-in-effect-scope", class = "promise-style", ctx_any = 8, ctx_none = 52, says = "uses async, await, a Promise or a .then/.catch/.finally chain in an Effect-first file outside its boundary and outside an interop callback", ver = "1", at = "effect@9428e17499:ai-docs/src/01_effect/01_basics/10_creating-effects.ts:45", doc = "`Effect.tryPromise` wraps Promise-based APIs that can reject or throw." },
   { id = "effect.runtime-escape-in-effect", class = "runtime-escape", ctx_any = 2, ctx_none = 4, says = "runs an effect to a Promise or a value from inside Effect code instead of composing it", ver = "1", at = "effect@9428e17499:ai-docs/src/04_integration/10_managed-runtime.ts:4", doc = "Use `ManagedRuntime` to run Effect programs from external frameworks while keeping your domain logic in services and Layers." },
 ]
+
+# edges (RE): masks over function ctx (FC); see `pulsar catalog --help`.
+# ctx 1 = async, 2 = Effect code, 4 = test, 8 = effect_only, 16 = boundary, 32 = interop callback.
+edges = [
+  { id = "effect.internal-promise-bridge", all = 40, none = 20, target_all = 9, target_none = 16, says = "bridges an async function of the Effect-first scope into Effect through an interop callback, instead of converting the callee", ver = "1", at = "effect@9428e17499:ai-docs/src/01_effect/01_basics/10_creating-effects.ts:45", doc = "`Effect.tryPromise` wraps Promise-based APIs that can reject or throw." },
+]
+
+# modules (RM): masks over function ctx (FC); see `pulsar catalog --help`.
+# ctx 1 = async, 2 = Effect code, 4 = test, 8 = effect_only, 16 = boundary, 32 = interop callback.
+modules = [
+  { id = "effect.mixed-module", all = 10, none = 52, also_all = 9, also_none = 54, says = "defines both Effect code and async functions in one Effect-first module", ver = "1", at = "effect@9428e17499:LLMS.md:53", doc = "When writing reusable functions that return an Effect, use `Effect.fn` or" },
+]

@@ -32,7 +32,25 @@
  {
   "law": "lines_shape",
   "bug": "ClassCtx.lines drops the count line",
-  "old": "Con{\"pulsar-classctx 0\", List.append(&2, String, CRep.fd(fs), Con{CRep.summary(fs), Nil{}})}",
-  "new": "Con{\"pulsar-classctx 0\", CRep.fd(fs)}"
+  "old": "Con{CRep.summary(fs), Nil{}}))}",
+  "new": "Nil{}))}"
+ },
+ {
+  "law": "of_rule_sound",
+  "bug": "Cx.of_rule counts every rule's findings",
+  "old": "Cx.push_f(U32.is_eq(r2, r), Fd{r2, site, fn, callee}, Cx.of_rule(t, r))",
+  "new": "Cx.push_f(True{}, Fd{r2, site, fn, callee}, Cx.of_rule(t, r))"
+ },
+ {
+  "law": "of_rule_complete",
+  "bug": "Cx.of_rule counts nothing",
+  "old": "Cx.push_f(U32.is_eq(r2, r), Fd{r2, site, fn, callee}, Cx.of_rule(t, r))",
+  "new": "Cx.of_rule(t, r)"
+ },
+ {
+  "law": "rcxn_rules_complete",
+  "bug": "Cx.frules_go lists only the first rule",
+  "old": "Cx.push_u(Bool.not(U32.is_eq(r, prev)), r, Cx.frules_go(t, r))",
+  "new": "Cx.frules_go(t, r)"
  }
 ]

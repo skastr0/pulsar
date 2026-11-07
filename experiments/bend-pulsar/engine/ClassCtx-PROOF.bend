@@ -373,3 +373,96 @@ def Laws.run_refuses_invalid(cf, bad):
 
 def Laws.lines_shape(fs):
   {==}
+
+# ---- X4-X6: per-rule counts ------------------------------------------------------------------------
+def Eq.tr3(+r2: U32, +r1: U32, +r: U32, x: {r2 == r1 : U32}, y: {r2 == r : U32}) -> {r1 == r : U32}:
+  %x : {_ == r : U32}
+  y
+
+def OR.lift(+r2: U32, +s2: U32, +f2: U32, +c2: U32, +t: List<&2, X.Fd>, +r: U32, +r1: U32, +s: U32, +f: U32, +c: U32, w: TL.And({r1 == r : U32}, Laws.FdAt(t, r1, s, f, c))) -> TL.And({r1 == r : U32}, Laws.FdAt(Con{X.Fd{r2, s2, f2, c2}, t}, r1, s, f, c)):
+  match w:
+    case Tuple{e, m}:
+      Tuple{e, Inr{m}}
+
+def OR.k(b: Bool, +r2: U32, +s2: U32, +f2: U32, +c2: U32, +t: List<&2, X.Fd>, +r: U32, +r1: U32, +s: U32, +f: U32, +c: U32, hb: {U32.is_eq(r2, r) == b : Bool}, h: Laws.FdAt(X.Cx.push_f(b, X.Fd{r2, s2, f2, c2}, X.Cx.of_rule(t, r)), r1, s, f, c), ih: Laws.FdAt(X.Cx.of_rule(t, r), r1, s, f, c) -> TL.And({r1 == r : U32}, Laws.FdAt(t, r1, s, f, c))) -> TL.And({r1 == r : U32}, Laws.FdAt(Con{X.Fd{r2, s2, f2, c2}, t}, r1, s, f, c)):
+  match b:
+    case True{}:
+      match h:
+        case Inl{e}:
+          match e:
+            case Tuple{+er, rest}:
+              Tuple{Eq.tr3(r2, r1, r, er, L.U32.eq_sound(r2, r, hb)), Inl{Tuple{er, rest}}}
+        case Inr{q}:
+          OR.lift(r2, s2, f2, c2, t, r, r1, s, f, c, ih(q))
+    case False{}:
+      OR.lift(r2, s2, f2, c2, t, r, r1, s, f, c, ih(h))
+
+def OR.s(fs: List<&2, X.Fd>, +r: U32, +r1: U32, +s: U32, +f: U32, +c: U32, h: Laws.FdAt(X.Cx.of_rule(fs, r), r1, s, f, c)) -> TL.And({r1 == r : U32}, Laws.FdAt(fs, r1, s, f, c)):
+  match fs:
+    case Nil{}:
+      Empty.absurd(TL.And({r1 == r : U32}, Laws.FdAt(Nil{}, r1, s, f, c)), h)
+    case Con{X.Fd{+r2, +s2, +f2, +c2}, +t}:
+      OR.k(U32.is_eq(r2, r), r2, s2, f2, c2, t, r, r1, s, f, c, {==}, h, y => OR.s(t, r, r1, s, f, c, y))
+
+def Laws.of_rule_sound(fs, r, r2, site, fn, callee, h):
+  OR.s(fs, r, r2, site, fn, callee, h)
+
+def OC.hit(b: Bool, +r2: U32, +s2: U32, +f2: U32, +c2: U32, +rest: List<&2, X.Fd>, +r: U32, +s: U32, +f: U32, +c: U32, hb: {b == True{} : Bool}, e: TL.And({r2 == r : U32}, TL.And({s2 == s : U32}, TL.And({f2 == f : U32}, {c2 == c : U32})))) -> Laws.FdAt(X.Cx.push_f(b, X.Fd{r2, s2, f2, c2}, rest), r, s, f, c):
+  %Equal.sym(Bool, b, True{}, hb) : Laws.FdAt(X.Cx.push_f(_, X.Fd{r2, s2, f2, c2}, rest), r, s, f, c)
+  Inl{e}
+
+def OC.keep(b: Bool, +r2: U32, +s2: U32, +f2: U32, +c2: U32, +rest: List<&2, X.Fd>, +r: U32, +s: U32, +f: U32, +c: U32, m: Laws.FdAt(rest, r, s, f, c)) -> Laws.FdAt(X.Cx.push_f(b, X.Fd{r2, s2, f2, c2}, rest), r, s, f, c):
+  match b:
+    case True{}:
+      Inr{m}
+    case False{}:
+      m
+
+def OC(fs: List<&2, X.Fd>, +r: U32, +s: U32, +f: U32, +c: U32, h: Laws.FdAt(fs, r, s, f, c)) -> Laws.FdAt(X.Cx.of_rule(fs, r), r, s, f, c):
+  match fs:
+    case Nil{}:
+      Empty.absurd(Laws.FdAt(Nil{}, r, s, f, c), h)
+    case Con{X.Fd{+r2, +s2, +f2, +c2}, +t}:
+      match h:
+        case Inl{e}:
+          match e:
+            case Tuple{+er, rest}:
+              OC.hit(U32.is_eq(r2, r), r2, s2, f2, c2, X.Cx.of_rule(t, r), r, s, f, c, U.eq_t(r2, r, er), Tuple{er, rest})
+        case Inr{q}:
+          OC.keep(U32.is_eq(r2, r), r2, s2, f2, c2, X.Cx.of_rule(t, r), r, s, f, c, OC(t, r, s, f, c, q))
+
+def Laws.of_rule_complete(fs, r, site, fn, callee, h):
+  OC(fs, r, site, fn, callee, h)
+
+def FRG.t(+r1: U32, +prev: U32, +t2: List<&2, X.Fd>, +r: U32, o: Either<&2, &2, {r1 == r : U32}, TL.Mem(X.Cx.frules_go(t2, r1), r)>) -> Either<&2, &2, {prev == r : U32}, TL.Mem(X.Cx.push_u(Bool.not(U32.is_eq(r1, prev)), r1, X.Cx.frules_go(t2, r1)), r)>:
+  match o:
+    case Inl{e}:
+      RG.h(U32.is_eq(r1, prev), r1, prev, X.Cx.frules_go(t2, r1), r, {==}, e)
+    case Inr{m}:
+      Inr{PU.keep(Bool.not(U32.is_eq(r1, prev)), r1, X.Cx.frules_go(t2, r1), r, m)}
+
+def FRG(t: List<&2, X.Fd>, +prev: U32, +r: U32, +s: U32, +f: U32, +c: U32, h: Laws.FdAt(t, r, s, f, c)) -> Either<&2, &2, {prev == r : U32}, TL.Mem(X.Cx.frules_go(t, prev), r)>:
+  match t:
+    case Nil{}:
+      Empty.absurd(Either<&2, &2, {prev == r : U32}, TL.Mem(Nil{}, r)>, h)
+    case Con{X.Fd{+r1, +s1, +f1, +c1}, +t2}:
+      match h:
+        case Inl{e}:
+          match e:
+            case Tuple{e1, rest}:
+              RG.h(U32.is_eq(r1, prev), r1, prev, X.Cx.frules_go(t2, r1), r, {==}, e1)
+        case Inr{q}:
+          FRG.t(r1, prev, t2, r, FRG(t2, r1, r, s, f, c, q))
+
+def Laws.rcxn_rules_complete(fs, r, site, fn, callee, h):
+  match fs:
+    case Nil{}:
+      Empty.absurd(TL.Mem(Nil{}, r), h)
+    case Con{X.Fd{+r1, +s1, +f1, +c1}, +t}:
+      match h:
+        case Inl{e}:
+          match e:
+            case Tuple{e1, rest}:
+              Inl{e1}
+        case Inr{q}:
+          FRG(t, r1, r, site, fn, callee, q)

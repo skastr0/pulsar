@@ -17,6 +17,9 @@
 #
 # Output (one finding per rule and site, rules ascending, sites ascending):
 #   RCX rule site fn callee
+# then, per rule with a finding (rules ascending), the number of its findings, a
+# metric the CLI tracks per sha (never a score): `RCXN rule n`. A rule with no
+# RCXN line has no finding (law rcxn_rules_complete).
 #
 # Generalisation: the mechanism is a filter over numbers (class, context bits,
 # rule masks) and names no language, framework or incident; it encodes no taste,
@@ -57,6 +60,10 @@ type Fd is Data:
 
 type CD is Data:
   CD{bad: U32, f: CF}
+
+# A rule and the number of its findings.
+type Nn is Data:
+  Nn{r: U32, n: Nat}
 
 def CF.css(cf: CF) -> List<&2, Cs>:
   match cf:
@@ -156,6 +163,37 @@ def Cx.find(rs: List<&2, U32>, +css: List<&2, Cs>, +rts: List<&2, Rt>) -> List<&
 def ClassCtx.findings(+cf: CF) -> List<&2, Fd>:
   Cx.find(Cx.rules(CF.rls(cf)), CF.css(cf), Cx.tables(CF.rls(cf), CF.cls(cf)))
 
+# ---- per-rule counts ----------------------------------------------------------------------------
+# The findings of rule r.
+def Cx.of_rule(fs: List<&2, Fd>, +r: U32) -> List<&2, Fd>:
+  match fs:
+    case Nil{}:
+      Nil{}
+    case Con{Fd{+r2, site, fn, callee}, t}:
+      Cx.push_f(U32.is_eq(r2, r), Fd{r2, site, fn, callee}, Cx.of_rule(t, r))
+
+# The rule ids of the findings, once per run (findings come rule by rule).
+def Cx.frules_go(fs: List<&2, Fd>, +prev: U32) -> List<&2, U32>:
+  match fs:
+    case Nil{}:
+      Nil{}
+    case Con{Fd{+r, site, fn, callee}, t}:
+      Cx.push_u(Bool.not(U32.is_eq(r, prev)), r, Cx.frules_go(t, r))
+
+def Cx.frules(fs: List<&2, Fd>) -> List<&2, U32>:
+  match fs:
+    case Nil{}:
+      Nil{}
+    case Con{Fd{+r, site, fn, callee}, t}:
+      Con{r, Cx.frules_go(t, r)}
+
+def Cx.counts(rs: List<&2, U32>, +fs: List<&2, Fd>) -> List<&2, Nn>:
+  match rs:
+    case Nil{}:
+      Nil{}
+    case Con{+r, t}:
+      Con{Nn{r, List.length(&2, Fd, Cx.of_rule(fs, r))}, Cx.counts(t, fs)}
+
 # ---- validity ---------------------------------------------------------------------------------
 # Every relation is strictly ascending (FACTS.md: sorted, duplicates removed).
 # CS is checked on `site` alone, since a site id names one call.
@@ -211,12 +249,19 @@ def CRep.fd(fs: List<&2, Fd>) -> List<&2, String>:
     case Con{Fd{r, site, fn, callee}, t}:
       Con{"RCX " ++ U32.show(r) ++ " " ++ U32.show(site) ++ " " ++ U32.show(fn) ++ " " ++ U32.show(callee), CRep.fd(t)}
 
+def CRep.counts(ns: List<&2, Nn>) -> List<&2, String>:
+  match ns:
+    case Nil{}:
+      Nil{}
+    case Con{Nn{r, n}, t}:
+      Con{"RCXN " ++ U32.show(r) ++ " " ++ Nat.show(n), CRep.counts(t)}
+
 def CRep.summary(+fs: List<&2, Fd>) -> String:
   "RCXS " ++ U32.show(U32.from_nat(List.length(&2, Fd, fs)))
 
-# Header, one RCX line per finding, then the count.
+# Header, one RCX line per finding, one RCXN line per rule with findings, then the count.
 def ClassCtx.lines(+fs: List<&2, Fd>) -> List<&2, String>:
-  Con{"pulsar-classctx 0", List.append(&2, String, CRep.fd(fs), Con{CRep.summary(fs), Nil{}})}
+  Con{"pulsar-classctx 0", List.append(&2, String, CRep.fd(fs), List.append(&2, String, CRep.counts(Cx.counts(Cx.frules(fs), fs)), Con{CRep.summary(fs), Nil{}}))}
 
 # ---- decoding rows (reader; unproven) ----------------------------------------------------------
 # Tags: CS 17235, CL 17228, RL 21068. Other tags belong to other detectors and

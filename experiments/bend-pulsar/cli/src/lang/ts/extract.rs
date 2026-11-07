@@ -389,6 +389,21 @@ mod tests {
     }
 
     #[test]
+    fn each_function_reports_the_ctx_bits_in_force() {
+        let alloc = Allocator::default();
+        let f = extract(&alloc, "a.ts", Path::new("a.ts"), PROMISES, &all_index(), 8 | ctx_test(), None).functions;
+        // load and its callback are async; the generator and what it holds are Effect code; the
+        // tryPromise options are interop callbacks. The test bit is never in FC (TF says it).
+        let want: Vec<(u32, u8)> =
+            vec![(0, 9), (1, 9), (2, 8), (3, 8), (4, 8), (5, 8), (6, 8), (7, 10), (8, 1 | 2 | 8 | 32), (9, 2 | 8 | 32), (10, 10)];
+        assert_eq!(f.fn_ctx, want);
+    }
+
+    fn ctx_test() -> u8 {
+        crate::lang::functions::ctx::TEST
+    }
+
+    #[test]
     fn without_policy_no_syntax_site_is_emitted() {
         // No bit 8: no shipped rule can fire on a construct, so only the Promise calls remain.
         let want = rows(&[(2, "global#Promise.all", 0), (4, "global#Promise", 0)]);

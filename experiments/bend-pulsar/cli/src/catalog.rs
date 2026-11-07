@@ -243,6 +243,39 @@ pub struct Hot {
     pub doc: String,
 }
 
+/// A call-edge rule (FACTS.md `RE`): a call to a repo function from a site whose ctx has every bit of
+/// `all` and none of `none`, where the callee's own ctx (`FC`) has every bit of `target_all` and none
+/// of `target_none`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EdgeRule {
+    pub id: String,
+    pub all: u32,
+    pub none: u32,
+    pub target_all: u32,
+    pub target_none: u32,
+    pub says: String,
+    pub ver: String,
+    pub at: String,
+    pub doc: String,
+}
+
+/// A module rule (FACTS.md `RM`): a file holding a function whose ctx (`FC`) has every bit of `all`
+/// and none of `none`, and a function whose ctx has every bit of `also_all` and none of `also_none`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ModuleRule {
+    pub id: String,
+    pub all: u32,
+    pub none: u32,
+    pub also_all: u32,
+    pub also_none: u32,
+    pub says: String,
+    pub ver: String,
+    pub at: String,
+    pub doc: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Catalog {
@@ -276,6 +309,10 @@ pub struct Catalog {
     pub hots: Vec<Hot>,
     #[serde(default)]
     pub growths: Vec<Growth>,
+    #[serde(default)]
+    pub edges: Vec<EdgeRule>,
+    #[serde(default)]
+    pub modules: Vec<ModuleRule>,
 }
 
 /// A parsed, validated catalog and its fingerprint.
@@ -387,6 +424,7 @@ fn check_declared(c: &Catalog, names: &BTreeSet<&str>) -> Result<(), String> {
 fn check_composites(c: &Catalog) -> Result<(), String> {
     let mut ids = BTreeSet::new();
     let all = c.rules.iter().map(|r| &r.id).chain(c.fanouts.iter().map(|r| &r.id)).chain(c.konsts.iter().map(|r| &r.id)).chain(c.hots.iter().map(|r| &r.id)).chain(c.growths.iter().map(|r| &r.id));
+    let all = all.chain(c.edges.iter().map(|r| &r.id)).chain(c.modules.iter().map(|r| &r.id));
     for id in all {
         if id.is_empty() || !ids.insert(id.as_str()) {
             return Err(format!("rule id {id:?} is empty or declared twice in this catalog"));
@@ -395,6 +433,12 @@ fn check_composites(c: &Catalog) -> Result<(), String> {
     for f in &c.fanouts {
         if f.none > 255 {
             return Err(format!("fan-out rule {:?}: none {} is not a ctx mask (0-255)", f.id, f.none));
+        }
+    }
+    let masks = c.edges.iter().map(|r| (&r.id, [r.all, r.none, r.target_all, r.target_none])).chain(c.modules.iter().map(|r| (&r.id, [r.all, r.none, r.also_all, r.also_none])));
+    for (id, m) in masks {
+        if m.iter().any(|&b| b > 255) {
+            return Err(format!("rule {id:?}: a mask is not a ctx mask (0-255)"));
         }
     }
     for h in &c.hots {
@@ -458,7 +502,9 @@ fn check_order(c: &Catalog) -> Result<(), String> {
     sorted_unique("fanouts", c.fanouts.iter().map(|r| r.id.clone()))?;
     sorted_unique("konsts", c.konsts.iter().map(|r| r.id.clone()))?;
     sorted_unique("hots", c.hots.iter().map(|r| r.id.clone()))?;
-    sorted_unique("growths", c.growths.iter().map(|r| r.id.clone()))
+    sorted_unique("growths", c.growths.iter().map(|r| r.id.clone()))?;
+    sorted_unique("edges", c.edges.iter().map(|r| r.id.clone()))?;
+    sorted_unique("modules", c.modules.iter().map(|r| r.id.clone()))
 }
 
 /// One entry per line: every array entry is an inline table that starts its own line.
@@ -475,7 +521,9 @@ fn check_one_entry_per_line(c: &Catalog, text: &str) -> Result<(), String> {
         + c.fanouts.len()
         + c.konsts.len()
         + c.hots.len()
-        + c.growths.len();
+        + c.growths.len()
+        + c.edges.len()
+        + c.modules.len();
     let starts = text.lines().filter(|l| l.trim_start().starts_with("{ ")).count();
     if starts != entries {
         return Err(format!("{entries} entries but {starts} lines start an inline table: one entry per line"));

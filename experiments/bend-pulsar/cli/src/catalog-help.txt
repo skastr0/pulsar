@@ -81,6 +81,14 @@ FILE FORMAT  (TOML; format = "pulsar-catalog 0")
       Unbounded growth: a SELECT with no LIMIT whose filter binds no key of the table, on a table
       that code an entry point reaches within `depth` call edges inserts into. Needs the repo's
       schema (.sql files) to be complete; with a partial schema it reports nothing and says so.
+    edges    = [ { id, all, none, target_all, target_none, says, ver, at, doc } ]
+      Call edge: a call to a repo function from a site whose ctx has every bit of `all` and none of
+      `none`, where the callee's own ctx has every bit of `target_all` and none of `target_none`.
+    modules  = [ { id, all, none, also_all, also_none, says, ver, at, doc } ]
+      Module: a file holding a function whose ctx has every bit of `all` and none of `none`, and a
+      function whose ctx has every bit of `also_all` and none of `also_none`. A function's ctx is
+      the call-site ctx in force where it is defined (the bits below, without 4 and 64).
+      Edge and module ids share that one id space; each list is sorted by id.
 
 FIXED CLASS IDS
   1 query  2 blocking  3 log  4 error-erasing  5 runtime-escape  6 fork
