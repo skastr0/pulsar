@@ -126,7 +126,7 @@ pub enum Callee {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SiteKind {
     /// A call site of catalog symbol `sym` (an index into [`FileFns::syms`]).
-    Call { sym: u32, loop_depth: u32, ctx: u8 },
+    Call { sym: u32, loop_depth: u32, ctx: u8, consts: Box<[(u8, u8)]> },
     /// An error handler of the given shape.
     Handler { shape: u8 },
     /// A call of a repo function (`CE`); `node` is the innermost enclosing control-tree node.
@@ -244,6 +244,8 @@ pub struct SiteRows {
     pub cs: Vec<[u32; 5]>,
     /// `(site, fn, shape)`.
     pub hd: Vec<[u32; 3]>,
+    /// `(site, pos, kind)`: argument `pos` of a classed call is a constant.
+    pub al: Vec<[u32; 3]>,
     /// `(site, fn, target, node, loop_depth, ctx)`.
     pub ce: Vec<[u32; 6]>,
     /// `(fn, reason, count)`, sorted.
@@ -293,8 +295,9 @@ fn number_file(
     for s in &f.sites {
         let fnid = base + s.fn_local;
         match &s.kind {
-            SiteKind::Call { sym, loop_depth, ctx } => {
+            SiteKind::Call { sym, loop_depth, ctx, consts } => {
                 out.cs.push([*site, fnid, ids[f.syms[*sym as usize].as_str()], *loop_depth, *ctx as u32]);
+                out.al.extend(consts.iter().map(|(pos, kind)| [*site, *pos as u32, *kind as u32]));
             }
             SiteKind::Handler { shape } => out.hd.push([*site, fnid, *shape as u32]),
             SiteKind::Edge { to: Callee::Resolved { file, fn_local }, node, loop_depth, ctx } => {

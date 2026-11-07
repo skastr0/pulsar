@@ -236,7 +236,7 @@ mod fixtures {
         for s in &f.sites {
             let chain = &f.fns[s.fn_local as usize].chain;
             match &s.kind {
-                SiteKind::Call { sym, loop_depth, ctx } => {
+                SiteKind::Call { sym, loop_depth, ctx, .. } => {
                     out += &format!("CS {chain} {} loops={loop_depth} ctx={ctx}\n", f.syms[*sym as usize]);
                 }
                 SiteKind::Handler { shape } => out += &format!("HD {chain} shape={shape}\n"),
@@ -304,5 +304,23 @@ mod fixtures {
             got,
             ["Room>fetch:1", "Room>alarm:4", "Room>join:2", "Rpc>fetch:1", "Rpc>ping:3", "default>fetch:1", "default>scheduled:4"]
         );
+    }
+
+    /// `AL`: which arguments of a classed call are constants (literal, plain template, a name
+    /// bound once to a literal), and none for a computed, interpolated or reassigned one.
+    #[test]
+    fn constant_arguments_of_classed_calls() {
+        let src = "import { SqlClient } from \"@effect/sql\";\nconst fixed = \"a\";\nlet moved = \"b\";\nmoved = \"c\";\nexport const q = (sql: SqlClient.SqlClient, x: string) => {\n  sql.unsafe(\"s\", 5);\n  sql.unsafe(`t`);\n  sql.unsafe(fixed);\n  sql.unsafe(moved);\n  sql.unsafe(`u${x}`);\n  sql.unsafe(x, true);\n};\n";
+        let alloc = Allocator::default();
+        let f = extract(&alloc, "al.ts", Path::new("al.ts"), src, &all_index(), false, None).functions;
+        let got: Vec<Vec<(u8, u8)>> = f
+            .sites
+            .iter()
+            .filter_map(|s| match &s.kind {
+                SiteKind::Call { consts, .. } => Some(consts.to_vec()),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(got, [vec![(0, 1), (1, 1)], vec![(0, 2)], vec![(0, 3)], vec![], vec![], vec![(1, 1)]]);
     }
 }

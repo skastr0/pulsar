@@ -349,6 +349,7 @@ fn push_sites(
     rows.cl.iter().for_each(|r| w.push(Rel::Cl, r));
     rows.cs.iter().for_each(|r| w.push(Rel::Cs, r));
     rows.hd.iter().for_each(|r| w.push(Rel::Hd, r));
+    rows.al.iter().for_each(|r| w.push(Rel::Al, r));
     rows.ce.iter().for_each(|r| w.push(Rel::Ce, r));
     rows.cu.iter().for_each(|r| w.push(Rel::Cu, r));
     st.sites = rows.cs.len() + rows.hd.len() + rows.ce.len();
