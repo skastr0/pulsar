@@ -304,3 +304,96 @@ def Cap.mul(+a: Nat, +b: Nat, +c: Nat) -> {Nat.min(Nat.mul(Nat.min(a, c), Nat.mi
   %Equal.sym(Nat, Nat.min(Nat.mul(Nat.min(b, c), a), c), Nat.min(Nat.mul(b, a), c), Cap.mul_l(b, a, c)) : {_ == Nat.min(Nat.mul(a, b), c) : Nat}
   %Nat.mul_comm(b, a) : {Nat.min(Nat.mul(b, a), c) == Nat.min(_, c) : Nat}
   {==}
+
+# ---- order, subtraction and cancellation (for Crap) -----------------------------------------------
+def Disc.Bool(b: Bool) -> Type:
+  match b:
+    case False{}:
+      Empty
+    case True{}:
+      Unit
+
+def Bool.ff_tt(e: {False{} == True{} : Bool}) -> Empty:
+  %Equal.sym(Bool, False{}, True{}, e) : Disc.Bool(_)
+  Unit{}
+
+def Bool.tt_ff(e: {True{} == False{} : Bool}) -> Empty:
+  %e : Disc.Bool(_)
+  Unit{}
+
+def Le.irrefl(+a: Nat, h: Le(1n+a, a)) -> Empty:
+  match a:
+    case 0n:
+      match h:
+        case Tuple{d, e}:
+          Nat.succ_ne_zero(d, e)
+    case 1n+p:
+      Le.irrefl(p, Le.unsucc(1n+p, p, h))
+
+def Le.lt_or_le2(+p: Nat, +q: Nat, o: Either<&2, &2, Le(p, q), Le(1n+q, p)>) -> Either<&2, &2, Le(1n+p, 1n+q), Le(1n+(1n+q), 1n+p)>:
+  match o:
+    case Inl{h}:
+      Inl{Le.succ(p, q, h)}
+    case Inr{h}:
+      Inr{Le.succ(1n+q, p, h)}
+
+# a <= b, or b < a.
+def Le.lt_or_le(+a: Nat, +b: Nat) -> Either<&2, &2, Le(a, b), Le(1n+b, a)>:
+  match a b:
+    case 0n _:
+      Inl{Le.zero(b)}
+    case 1n+p 0n:
+      Inr{Le.succ(0n, p, Le.zero(p))}
+    case 1n+p 1n+q:
+      Le.lt_or_le2(p, q, Le.lt_or_le(p, q))
+
+def Nat.sub_zero_r(+a: Nat) -> {Nat.sub(a, 0n) == a : Nat}:
+  match a:
+    case 0n:
+      {==}
+    case 1n+p:
+      {==}
+
+def Nat.sub_add_cancel(+b: Nat, +d: Nat) -> {Nat.sub(Nat.add(b, d), b) == d : Nat}:
+  match b:
+    case 0n:
+      Nat.sub_zero_r(d)
+    case 1n+p:
+      Nat.sub_add_cancel(p, d)
+
+def Nat.sub_self(+a: Nat) -> {Nat.sub(a, a) == 0n : Nat}:
+  match a:
+    case 0n:
+      {==}
+    case 1n+p:
+      Nat.sub_self(p)
+
+def Nat.add_sub_of_le(+a: Nat, +b: Nat, h: Le(b, a)) -> {Nat.add(b, Nat.sub(a, b)) == a : Nat}:
+  match h:
+    case Tuple{+d, e}:
+      %e : {Nat.add(b, Nat.sub(_, b)) == _ : Nat}
+      %Equal.sym(Nat, Nat.sub(Nat.add(b, d), b), d, Nat.sub_add_cancel(b, d)) : {Nat.add(b, _) == Nat.add(b, d) : Nat}
+      {==}
+
+# a <= b <= n  ->  n - b <= n - a
+def Le.sub_mono(+a: Nat, +b: Nat, +n: Nat, hab: Le(a, b), hbn: Le(b, n)) -> Le(Nat.sub(n, b), Nat.sub(n, a)):
+  match hab hbn:
+    case Tuple{+d, e1} Tuple{+f, e2}:
+      %e2 : Le(Nat.sub(_, b), Nat.sub(_, a))
+      %e1 : Le(Nat.sub(Nat.add(_, f), _), Nat.sub(Nat.add(_, f), a))
+      %Equal.sym(Nat, Nat.sub(Nat.add(Nat.add(a, d), f), Nat.add(a, d)), f, Nat.sub_add_cancel(Nat.add(a, d), f)) : Le(_, Nat.sub(Nat.add(Nat.add(a, d), f), a))
+      %Equal.sym(Nat, Nat.add(Nat.add(a, d), f), Nat.add(a, Nat.add(d, f)), Nat.add_assoc(a, d, f)) : Le(f, Nat.sub(_, a))
+      %Equal.sym(Nat, Nat.sub(Nat.add(a, Nat.add(d, f)), a), Nat.add(d, f), Nat.sub_add_cancel(a, Nat.add(d, f))) : Le(f, _)
+      Le.add_l(f, d)
+
+def Le.cancel_l(+c: Nat, +x: Nat, +y: Nat, h: Le(Nat.add(c, x), Nat.add(c, y))) -> Le(x, y):
+  match c:
+    case 0n:
+      h
+    case 1n+p:
+      Le.cancel_l(p, x, y, Le.unsucc(Nat.add(p, x), Nat.add(p, y), h))
+
+def Le.mul_mono_l(+c: Nat, +a: Nat, +b: Nat, h: Le(a, b)) -> Le(Nat.mul(c, a), Nat.mul(c, b)):
+  %Equal.sym(Nat, Nat.mul(c, a), Nat.mul(a, c), Nat.mul_comm(c, a)) : Le(_, Nat.mul(c, b))
+  %Equal.sym(Nat, Nat.mul(c, b), Nat.mul(b, c), Nat.mul_comm(c, b)) : Le(Nat.mul(a, c), _)
+  Le.mul_mono(a, b, c, h)
