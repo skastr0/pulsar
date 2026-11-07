@@ -189,12 +189,26 @@ pub fn load(name: &str, text: &str) -> Result<Loaded, String> {
 }
 
 fn validate(c: &Catalog, text: &str) -> Result<(), String> {
+    check_header(c)?;
+    check_activate(c)?;
+    let names = check_classes(c)?;
+    check_declared(c, &names)?;
+    check_order(c)?;
+    check_one_entry_per_line(c, text)
+}
+
+fn check_header(c: &Catalog) -> Result<(), String> {
     if c.format != FORMAT {
         return Err(format!("format is {:?}, expected {FORMAT:?}", c.format));
     }
     if c.id.is_empty() || !c.id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-') {
         return Err(format!("id {:?} must be lowercase letters, digits and dashes", c.id));
     }
+    Ok(())
+}
+
+/// Only scope "pack" takes `activate`, and every activator is `dep:` or `import:` with a value.
+fn check_activate(c: &Catalog) -> Result<(), String> {
     match (c.scope, &c.activate) {
         (Scope::Pack, None) => return Err("scope \"pack\" requires `activate`".into()),
         (Scope::Pack, Some(a)) if a.is_empty() => return Err("`activate` is empty".into()),
@@ -207,8 +221,11 @@ fn validate(c: &Catalog, text: &str) -> Result<(), String> {
             return Err(format!("activate {a:?} must be dep:<package>, import:<specifier glob> or file:<base name>"));
         }
     }
+    Ok(())
+}
 
-    // Classes: fixed ids 1-8 or repo ids >= 1000; names and ids unique.
+/// Classes: fixed ids 1-8 or repo ids >= 1000; names and ids unique. Returns the declared names.
+fn check_classes(c: &Catalog) -> Result<BTreeSet<&str>, String> {
     let mut names = BTreeSet::new();
     let mut ids = BTreeSet::new();
     for k in &c.classes {
@@ -225,6 +242,11 @@ fn validate(c: &Catalog, text: &str) -> Result<(), String> {
             return Err(format!("class {:?} has an empty rule id", k.class));
         }
     }
+    Ok(names)
+}
+
+/// Every symbol and rule names a declared class, and every `use` is well formed.
+fn check_declared(c: &Catalog, names: &BTreeSet<&str>) -> Result<(), String> {
     let declared = |class: &str, what: &str| -> Result<(), String> {
         if names.contains(class) { Ok(()) } else { Err(format!("{what} uses class {class:?}, which `classes` does not declare")) }
     };
@@ -234,11 +256,11 @@ fn validate(c: &Catalog, text: &str) -> Result<(), String> {
             valid_use(u).map_err(|e| format!("symbol {:?}: {e}", s.sym))?;
         }
     }
-    for r in &c.rules {
-        declared(&r.class, &format!("rule {:?}", r.id))?;
-    }
+    c.rules.iter().try_for_each(|r| declared(&r.class, &format!("rule {:?}", r.id)))
+}
 
-    // Order: sorted and unique, so a diff shows only what changed.
+/// Sorted and unique, so a diff shows only what changed.
+fn check_order(c: &Catalog) -> Result<(), String> {
     // Aliases are longest-prefix-first, so an alias must not be shadowed by an earlier prefix of it.
     for (j, b) in c.aliases.iter().enumerate() {
         if let Some(a) = c.aliases[..j].iter().find(|a| b.from.starts_with(a.from.as_str())) {
@@ -258,9 +280,11 @@ fn validate(c: &Catalog, text: &str) -> Result<(), String> {
     sorted_unique("wrappers", c.wrappers.iter().map(|w| format!("{}\0{}", w.sym, w.ver)))?;
     sorted_unique("services", c.services.iter().map(|s| format!("{}\0{}", s.sym, s.ver)))?;
     sorted_unique("layers", c.layers.iter().map(|l| format!("{}\0{}", l.sym, l.ver)))?;
-    sorted_unique("rules", c.rules.iter().map(|r| r.id.clone()))?;
+    sorted_unique("rules", c.rules.iter().map(|r| r.id.clone()))
+}
 
-    // One entry per line: every array entry is an inline table that starts its own line.
+/// One entry per line: every array entry is an inline table that starts its own line.
+fn check_one_entry_per_line(c: &Catalog, text: &str) -> Result<(), String> {
     let entries = c.aliases.len()
         + c.classes.len()
         + c.symbols.len()
