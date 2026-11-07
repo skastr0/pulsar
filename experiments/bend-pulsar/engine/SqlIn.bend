@@ -25,47 +25,29 @@ def Si.f(fs: List<&2, U32>, k: Nat) -> U32:
     case Con{h, t} 1n+p:
       Si.f(t, p)
 
-# The field count a tag's rows must have, or 0 for a tag this file does not read.
-def Si.arity(tag: U32) -> Nat:
-  match tag:
-    case 17491:
-      2n
-    case 17492:
-      3n
-    case 17475:
-      4n
-    case 17481:
-      3n
-    case 17496:
-      3n
-    case 17478:
-      3n
-    case 17479:
-      4n
-    case 20819:
-      6n
-    case 20820:
-      3n
-    case 20821:
-      4n
-    case 20804:
-      4n
-    case 21330:
-      1n
-    case 17235:
-      5n
-    case 17228:
-      2n
-    case 17221:
-      6n
-    case 21062:
-      4n
-    case 16716:
-      3n
-    case 21067:
-      3n
-    case _:
+type Ar is Data:
+  Ar{tag: U32, n: Nat}
+
+# The field count a tag's rows must have, or 0 for a tag this file does not read: a table.
+def Si.arities() -> List<&2, Ar>:
+  [Ar{17491, 2n}, Ar{17492, 3n}, Ar{17475, 4n}, Ar{17481, 3n}, Ar{17496, 3n}, Ar{17478, 3n}, Ar{17479, 4n}, Ar{20819, 6n}, Ar{20820, 3n}, Ar{20821, 4n}, Ar{20804, 4n}, Ar{21330, 1n}, Ar{17235, 5n}, Ar{17228, 2n}, Ar{17221, 6n}, Ar{21062, 4n}, Ar{16716, 3n}, Ar{21067, 3n}]
+
+def Si.pick(hit: Bool, n: Nat, m: Nat) -> Nat:
+  match hit:
+    case True{}:
+      n
+    case False{}:
+      m
+
+def Si.look(+tag: U32, xs: List<&2, Ar>) -> Nat:
+  match xs:
+    case Nil{}:
       0n
+    case Con{Ar{t, n}, rest}:
+      Si.pick(U32.is_eq(t, tag), n, Si.look(tag, rest))
+
+def Si.arity(+tag: U32) -> Nat:
+  Si.look(tag, Si.arities())
 
 def Si.bad1(+n: Nat, fs: List<&2, U32>) -> Bool:
   Bool.and(Bool.not(Nat.is_eq(n, 0n)), Bool.not(Nat.is_eq(n, List.length(&2, U32, fs))))
