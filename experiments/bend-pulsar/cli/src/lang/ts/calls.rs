@@ -194,7 +194,7 @@ mod fixtures {
     fn render(rel: &str, src: &str) -> String {
         let alloc = Allocator::default();
         let ix = all_index();
-        let ex = extract(&alloc, rel, Path::new(rel), src, &ix, false);
+        let ex = extract(&alloc, rel, Path::new(rel), src, &ix, false, None);
         let f = ex.functions;
         let mut out = String::new();
         for s in &f.sites {

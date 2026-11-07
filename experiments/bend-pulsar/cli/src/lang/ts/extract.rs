@@ -1,7 +1,7 @@
 //! Parse one file, decide each import-like statement's binding usage, drop the AST.
 
 use super::calls::CatalogIndex;
-use super::functions::Walker;
+use super::functions::{PackHook, Walker};
 use crate::lang::functions::FileFns;
 use oxc_allocator::Allocator;
 use oxc_ast::{ast::ImportDeclarationSpecifier, AstKind};
@@ -58,7 +58,15 @@ pub struct Extracted {
     pub fatal: bool,
 }
 
-pub fn extract(alloc: &Allocator, rel: &str, path: &Path, source: &str, index: &CatalogIndex, test: bool) -> Extracted {
+pub fn extract(
+    alloc: &Allocator,
+    rel: &str,
+    path: &Path,
+    source: &str,
+    index: &CatalogIndex,
+    test: bool,
+    hook: Option<&mut dyn PackHook>,
+) -> Extracted {
     let source_type = SourceType::from_path(path).unwrap_or_else(|_| SourceType::ts());
     let ret = Parser::new(alloc, source, source_type).parse();
     if ret.fatal_error {
@@ -127,6 +135,10 @@ pub fn extract(alloc: &Allocator, rel: &str, path: &Path, source: &str, index: &
     }
     let walker = Walker::new(rel, source);
     let walker = if index.is_empty() { walker } else { walker.with_calls(scoping, index, test) };
+    let walker = match hook {
+        Some(h) => walker.with_hook(h),
+        None => walker,
+    };
     let functions = walker.run(&ret.program);
     Extracted { imports: out, functions, fatal: false }
 }
@@ -220,5 +232,49 @@ mod tests {
         assert_eq!(b.len(), 2);
         assert_eq!(a[0].key, b[0].key);
         assert_eq!((b[0].start_line, b[1].start_line), (3, 4));
+    }
+
+    use super::super::builtin::all_index;
+    use super::super::functions::HookCx;
+    use oxc_ast::ast::{BindingPattern, CallExpression, Class, Expression, VariableDeclarator};
+
+    #[derive(Default)]
+    struct Rec(Vec<String>);
+
+    impl PackHook for Rec {
+        fn on_call(&mut self, cx: &HookCx<'_>, c: &CallExpression<'_>) {
+            self.0.push(format!("call fn={:?} ctx={} sym={:?}", cx.fn_local, cx.ctx, (cx.resolve)(&c.callee)));
+        }
+        fn on_yield_star(&mut self, cx: &HookCx<'_>, arg: &Expression<'_>) {
+            self.0.push(format!("yield* fn={:?} sym={:?}", cx.fn_local, (cx.resolve)(arg)));
+        }
+        fn on_class(&mut self, _: &HookCx<'_>, c: &Class<'_>) {
+            self.0.push(format!("class {:?}", c.id.as_ref().map(|i| i.name.to_string())));
+        }
+        fn on_declarator(&mut self, cx: &HookCx<'_>, d: &VariableDeclarator<'_>) {
+            if let BindingPattern::BindingIdentifier(b) = &d.id {
+                self.0.push(format!("decl {} fn={:?}", b.name, cx.fn_local));
+            }
+        }
+    }
+
+    #[test]
+    fn a_pack_hook_sees_calls_yields_classes_and_declarators_with_resolved_names() {
+        let src = "import { Effect } from \"effect\";\nimport { SqlClient } from \"@effect/sql\";\nclass Repo {}\nexport const q = Effect.gen(function* () {\n  const sql = yield* SqlClient.SqlClient;\n  Effect.runSync(1);\n});\n";
+        let alloc = Allocator::default();
+        let ix = all_index();
+        let mut rec = Rec::default();
+        extract(&alloc, "a.ts", Path::new("a.ts"), src, &ix, false, Some(&mut rec));
+        assert_eq!(
+            rec.0,
+            [
+                "class Some(\"Repo\")",
+                "decl q fn=None",
+                "call fn=None ctx=0 sym=Some(\"effect#Effect.gen\")",
+                "decl sql fn=Some(0)",
+                "yield* fn=Some(0) sym=Some(\"@effect/sql#SqlClient.SqlClient\")",
+                "call fn=Some(0) ctx=2 sym=Some(\"effect#Effect.runSync\")",
+            ]
+        );
     }
 }

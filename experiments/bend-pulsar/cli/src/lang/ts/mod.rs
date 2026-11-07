@@ -115,7 +115,7 @@ fn parse_files(root: &Path, paths: &[String], res: &Resolution, index: &calls::C
                 return PerFile { i: vec![], u: vec![], fns: FileFns::default(), fatal: false, unreadable: true };
             };
             let text = String::from_utf8_lossy(&bytes);
-            let ex = extract(alloc, rel, &path, &text, index, is_test(rel));
+            let ex = extract(alloc, rel, &path, &text, index, is_test(rel), None);
             let (mut i, mut u) = (Vec::new(), Vec::new());
             for imp in ex.imports {
                 match res.resolve(rel, &imp.spec) {

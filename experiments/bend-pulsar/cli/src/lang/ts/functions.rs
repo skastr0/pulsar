@@ -110,6 +110,26 @@ struct Pending {
     kind: Option<u8>,
 }
 
+/// What a pack sees at the walker's four call points. A pack keeps its own per-file state in
+/// the hook and the driver reads it after the file is done, so the pack never re-parses and
+/// never numbers functions itself. Every method runs before the walker's own handling of the
+/// node, and the default does nothing.
+pub trait PackHook {
+    fn on_call(&mut self, _cx: &HookCx<'_>, _call: &CallExpression<'_>) {}
+    /// The operand of a `yield*`.
+    fn on_yield_star(&mut self, _cx: &HookCx<'_>, _arg: &Expression<'_>) {}
+    fn on_class(&mut self, _cx: &HookCx<'_>, _class: &Class<'_>) {}
+    fn on_declarator(&mut self, _cx: &HookCx<'_>, _d: &VariableDeclarator<'_>) {}
+}
+
+/// Context for a hook call: the enclosing function (a local index, `None` at module level),
+/// the `CS.ctx` bits in force, and the walker's name resolution, with bindings.
+pub struct HookCx<'a> {
+    pub fn_local: Option<u32>,
+    pub ctx: u8,
+    pub resolve: &'a dyn Fn(&Expression<'_>) -> Option<String>,
+}
+
 /// An `ident.a.b` expression: the root identifier (with its reference, once the semantic pass
 /// ran) and the members after it.
 struct Chain {
@@ -169,6 +189,7 @@ pub struct Walker<'s> {
     sym_ids: HashMap<String, u32>,
     /// Wrapper ctx bits for the function starting at the given offset.
     pending_ctx: Vec<(u32, u8)>,
+    hook: Option<&'s mut dyn PackHook>,
 }
 
 impl<'s> Walker<'s> {
@@ -192,7 +213,26 @@ impl<'s> Walker<'s> {
             bound: HashMap::new(),
             sym_ids: HashMap::new(),
             pending_ctx: Vec::new(),
+            hook: None,
         }
+    }
+
+    /// Let a pack observe calls, `yield*`, classes and declarators as the walk passes them.
+    pub fn with_hook(mut self, hook: &'s mut dyn PackHook) -> Self {
+        self.hook = Some(hook);
+        self
+    }
+
+    /// Run `f` on the hook, if any, with a context built from the walker's current state.
+    fn hooked(&mut self, f: impl FnOnce(&mut dyn PackHook, &HookCx<'_>)) {
+        let Some(hook) = self.hook.take() else { return };
+        let (fn_local, ctx) = match self.frames.last() {
+            Some(fr) => (Some(fr.local), fr.ctx),
+            None => (None, if self.test_file { ctx::TEST } else { 0 }),
+        };
+        let resolve = |e: &Expression<'_>| self.sym_of(e);
+        f(&mut *hook, &HookCx { fn_local, ctx, resolve: &resolve });
+        self.hook = Some(hook);
     }
 
     /// Turn on call-site, binding and handler facts for this file.
@@ -862,6 +902,7 @@ impl<'a> Visit<'a> for Walker<'_> {
     // ---- naming -------------------------------------------------------------------------
 
     fn visit_variable_declarator(&mut self, it: &VariableDeclarator<'a>) {
+        self.hooked(|h, cx| h.on_declarator(cx, it));
         if let (BindingPattern::BindingIdentifier(id), Some(init)) = (&it.id, &it.init) {
             self.hint(init, id.name.as_str(), None);
         }
@@ -927,6 +968,7 @@ impl<'a> Visit<'a> for Walker<'_> {
     }
 
     fn visit_class(&mut self, it: &Class<'a>) {
+        self.hooked(|h, cx| h.on_class(cx, it));
         let name = match &it.id {
             Some(id) => id.name.to_string(),
             None => self.take_pending(it.span.start).map_or_else(|| "#".to_string(), |p| p.name),
@@ -1091,6 +1133,7 @@ impl<'a> Visit<'a> for Walker<'_> {
     // ---- call sites and handlers ---------------------------------------------------------
 
     fn visit_call_expression(&mut self, it: &CallExpression<'a>) {
+        self.hooked(|h, cx| h.on_call(cx, it));
         self.on_call(it);
         if self.index.is_some() && self.chain(&it.callee).is_some() {
             // A pure chain holds nothing else to visit.
@@ -1100,6 +1143,13 @@ impl<'a> Visit<'a> for Walker<'_> {
         } else {
             walk::walk_call_expression(self, it);
         }
+    }
+
+    fn visit_yield_expression(&mut self, it: &YieldExpression<'a>) {
+        if let (true, Some(arg)) = (it.delegate, &it.argument) {
+            self.hooked(|h, cx| h.on_yield_star(cx, arg));
+        }
+        walk::walk_yield_expression(self, it);
     }
 
     fn visit_new_expression(&mut self, it: &NewExpression<'a>) {
