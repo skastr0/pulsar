@@ -61,11 +61,12 @@ pulsar-findings 0
 CYC <size> <file> <file> ...     one cycle, members ascending; cycles ordered by smallest member
 CERT <0|1>                       1 when the completeness and partition certificates passed
 S <files> <edges> <cycles>
-FM <fn> <cyclomatic> <nesting> <npath> <length>   every function, function-id order
+FM <fn> <cyclomatic> <nesting> <npath> <length> <cognitive>   every function, function-id order
 FX <rule-id> <fn> <value> <threshold> [<evidence>...]   one finding: value strictly over threshold
 ```
 
-`FM` and `FX` come from `engine/Metrics.bend`. `FX` lines follow all `FM` lines,
+`FM` and `FX` come from `engine/Metrics.bend`; the fifth `FM` measure, cognitive, from
+`engine/Cognitive.bend` over the same tree (Cognitive-LAWS `cog_fms_aligned`). `FX` lines follow all `FM` lines,
 grouped by function, with rules in the order cyclomatic, nesting, npath, length.
 Rule ids and default thresholds: `core.cyclomatic` 10, `core.nesting` 3,
 `core.npath` 200, `core.length` 60 (`research/thresholds.md`, `Metrics.defaults()`).

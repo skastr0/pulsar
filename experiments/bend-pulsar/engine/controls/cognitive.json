@@ -82,5 +82,23 @@
   "bug": "test functions get findings",
   "old": "    case True{}:\n      rest\n    case False{}:\n      M.Rule.check(8",
   "new": "    case True{}:\n      M.Rule.check(8, fn, v, thr, rest)\n    case False{}:\n      M.Rule.check(8"
+ },
+ {
+  "law": "cog_fms_aligned",
+  "bug": "the FM line drops the cognitive field",
+  "old": "M.Report.fm(m) ++ \" \" ++ Nat.show(cog)",
+  "new": "M.Report.fm(m)"
+ },
+ {
+  "law": "cog_fms_aligned",
+  "bug": "FM lines stop after the first function",
+  "old": "Con{Cog.fm(m, g), Cog.fms(t, u)}",
+  "new": "Con{Cog.fm(m, g), Nil{}}"
+ },
+ {
+  "law": "cog_fms_nil",
+  "bug": "an FM line with no function",
+  "old": "    case _ _:\n      Nil{}",
+  "new": "    case _ _:\n      [\"FM\"]"
  }
 ]

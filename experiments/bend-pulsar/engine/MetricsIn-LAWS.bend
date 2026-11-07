@@ -48,25 +48,29 @@ law glue_measure_is_run:
   for +fts: List<&2, M.FnT>
   {M.Metrics.run2(cap, Some{fts}) == Some{M.Metrics.measure_all(fts, cap)} : Maybe<&2, List<&2, M.FnM>>}
 
-# G3. built trees are measured by Metrics and by Cognitive at threshold 15, then the
-# measures are joined with the CV rows (Crap.join).
+# G3. built trees are measured by Metrics and by Cognitive; the cognitive findings are at
+# threshold 15 (Cognitive.lines, by cog_lines), and Metrics' measures are joined with the
+# CV rows (Crap.join).
 law glue_measures:
   for +r: M.Rules
   for +cvs: List<&2, C.Cv>
   for +chs: List<&2, H.Ch>
   for +ops: List<&2, G.Op>
   for +fts: List<&2, M.FnT>
-  {I.In.out(r, Some{cvs}, chs, Some{ops}, Some{fts}) == I.In.comp(r, M.Metrics.measure_all(fts, M.Rules.cap(r)), G.Cognitive.lines(15n, fts, ops), chs, C.Crap.join(M.Metrics.measure_all(fts, M.Rules.cap(r)), cvs)) : Maybe<&2, List<&2, String>>}
+  {I.In.out(r, Some{cvs}, chs, Some{ops}, Some{fts}) == I.In.comp(r, M.Metrics.measure_all(fts, M.Rules.cap(r)), G.Cog.measure_all(fts, ops), G.Cognitive.lines(15n, fts, ops), chs, C.Crap.join(M.Metrics.measure_all(fts, M.Rules.cap(r)), cvs)) : Maybe<&2, List<&2, String>>}
 
-# G4. the output is Metrics.lines, then the cognitive lines, then Crap.lines at the CRAP
-# threshold, then Hotspot.lines at the churn threshold over Metrics' and CRAP's findings.
+# G4. the output is the FM lines (each function's Metrics measures with its cognitive
+# measure, Cognitive-LAWS G), then Metrics' FX lines, then the cognitive lines, then
+# Crap.lines at the CRAP threshold, then Hotspot.lines at the churn threshold over
+# Metrics' and CRAP's findings.
 law glue_prints_lines:
   for +r: M.Rules
   for +ms: List<&2, M.FnM>
+  for +gs: List<&2, G.CgM>
   for +gl: List<&2, String>
   for +chs: List<&2, H.Ch>
   for +xs: List<&2, C.Cr>
-  {I.In.comp(r, ms, gl, chs, Some{xs}) == Some{List.append(&2, String, M.Metrics.lines(r, ms), List.append(&2, String, gl, List.append(&2, String, C.Crap.lines(30n, C.Crap.measure_all(xs)), H.Hotspot.lines(2n, chs, M.Metrics.findings(r, ms), C.Crap.findings(30n, C.Crap.measure_all(xs))))))} : Maybe<&2, List<&2, String>>}
+  {I.In.comp(r, ms, gs, gl, chs, Some{xs}) == Some{List.append(&2, String, G.Cog.fms(ms, gs), List.append(&2, String, M.Report.fxs(M.Metrics.findings(r, ms)), List.append(&2, String, gl, List.append(&2, String, C.Crap.lines(30n, C.Crap.measure_all(xs)), H.Hotspot.lines(2n, chs, M.Metrics.findings(r, ms), C.Crap.findings(30n, C.Crap.measure_all(xs)))))))} : Maybe<&2, List<&2, String>>}
 
 # G5. refused facts print nothing: the trees are refused, the CV rows or the CO rows
 # are malformed, or the join refuses.
@@ -94,6 +98,7 @@ law glue_refuses_co:
 law glue_refuses_join:
   for +r: M.Rules
   for +ms: List<&2, M.FnM>
+  for +gs: List<&2, G.CgM>
   for +gl: List<&2, String>
   for +chs: List<&2, H.Ch>
-  {I.In.comp(r, ms, gl, chs, None{}) == None{} : Maybe<&2, List<&2, String>>}
+  {I.In.comp(r, ms, gs, gl, chs, None{}) == None{} : Maybe<&2, List<&2, String>>}
