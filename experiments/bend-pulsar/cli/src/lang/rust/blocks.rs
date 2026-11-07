@@ -19,6 +19,7 @@
 //! (`RefCell`, `Mutex`) is invisible, so the facts can under-link there. Macro bodies emit nothing.
 
 use std::collections::{BTreeSet, HashMap};
+use crate::lang::functions::BlockRows;
 use syn::{BinOp, Expr, Lit, Member, Pat, UnOp};
 
 #[derive(Default)]
@@ -34,15 +35,6 @@ pub struct BlockState {
     bc: BTreeSet<(u32, u32, u8, u32)>,
 }
 
-/// Rows of one function, in local block ids.
-#[derive(Default, Debug)]
-pub struct BlockRows {
-    pub bl: Vec<[u32; 3]>,
-    pub bw: Vec<[u32; 3]>,
-    pub br: Vec<[u32; 3]>,
-    pub bc: Vec<[u32; 5]>,
-}
-
 fn fnv32(s: &str) -> u32 {
     let mut h: u32 = 0x811c_9dc5;
     for b in s.bytes() {
@@ -54,10 +46,7 @@ fn fnv32(s: &str) -> u32 {
 /// A place expression's chain text and root: `self.a.b` -> ("self.a.b", "self"); `x[i]` -> x.
 fn place(e: &Expr) -> Option<(String, String)> {
     match e {
-        Expr::Path(p) if p.qself.is_none() && p.path.segments.len() == 1 => {
-            let n = p.path.segments[0].ident.to_string();
-            n.chars().next().is_some_and(|c| c.is_lowercase() || c == '_').then(|| (n.clone(), n))
-        }
+        Expr::Path(p) => place_path(p),
         Expr::Field(f) => {
             let (chain, root) = place(&f.base)?;
             let m = match &f.member {
@@ -73,6 +62,15 @@ fn place(e: &Expr) -> Option<(String, String)> {
         Expr::Try(t) => place(&t.expr),
         _ => None,
     }
+}
+
+/// A single lower-case identifier path is a variable.
+fn place_path(p: &syn::ExprPath) -> Option<(String, String)> {
+    if p.qself.is_some() || p.path.segments.len() != 1 {
+        return None;
+    }
+    let n = p.path.segments[0].ident.to_string();
+    n.chars().next().is_some_and(|c| c.is_lowercase() || c == '_').then(|| (n.clone(), n))
 }
 
 /// Literal-like operand text: a literal, a negated literal, a constant or an enum variant path.
@@ -115,15 +113,23 @@ pub fn bindings(p: &Pat, out: &mut Vec<String>) {
             }
         }
         Pat::Reference(r) => bindings(&r.pat, out),
-        Pat::Tuple(t) => t.elems.iter().for_each(|x| bindings(x, out)),
-        Pat::TupleStruct(t) => t.elems.iter().for_each(|x| bindings(x, out)),
-        Pat::Struct(s) => s.fields.iter().for_each(|f| bindings(&f.pat, out)),
-        Pat::Slice(s) => s.elems.iter().for_each(|x| bindings(x, out)),
-        Pat::Or(o) => o.cases.iter().for_each(|x| bindings(x, out)),
         Pat::Paren(p) => bindings(&p.pat, out),
         Pat::Type(t) => bindings(&t.pat, out),
-        _ => {}
+        Pat::Struct(s) => s.fields.iter().for_each(|f| bindings(&f.pat, out)),
+        _ => bindings_seq(p, out),
     }
+}
+
+/// Patterns made of a list of sub-patterns.
+fn bindings_seq(p: &Pat, out: &mut Vec<String>) {
+    let elems: Vec<&Pat> = match p {
+        Pat::Tuple(t) => t.elems.iter().collect(),
+        Pat::TupleStruct(t) => t.elems.iter().collect(),
+        Pat::Slice(s) => s.elems.iter().collect(),
+        Pat::Or(o) => o.cases.iter().collect(),
+        _ => return,
+    };
+    elems.into_iter().for_each(|x| bindings(x, out));
 }
 
 /// The literal a pattern pins its scrutinee to: `0`, `None`, `Kind::A`, the variant of `Some(..)`.
@@ -173,9 +179,13 @@ impl BlockState {
                 return format!("v{v}");
             }
         }
-        if let Some(l) = literal(e) {
-            return format!("l:{l}");
+        match literal(e) {
+            Some(l) => format!("l:{l}"),
+            None => self.norm_compound(e, reads),
         }
+    }
+
+    fn norm_compound(&mut self, e: &Expr, reads: &mut Vec<u32>) -> String {
         match e {
             Expr::Binary(b) => {
                 let (l, r) = (self.norm(&b.left, reads), self.norm(&b.right, reads));
@@ -185,14 +195,20 @@ impl BlockState {
             Expr::Paren(p) => self.norm(&p.expr, reads),
             Expr::Reference(r) => self.norm(&r.expr, reads),
             Expr::Try(t) => format!("{}?", self.norm(&t.expr, reads)),
+            Expr::Cast(c) => self.norm(&c.expr, reads),
+            Expr::Let(l) => format!("let {}", self.norm(&l.expr, reads)),
+            _ => self.norm_other(e, reads),
+        }
+    }
+
+    fn norm_other(&mut self, e: &Expr, reads: &mut Vec<u32>) -> String {
+        match e {
             Expr::Index(i) => format!("{}[{}]", self.norm(&i.expr, reads), self.norm(&i.index, reads)),
             Expr::MethodCall(m) => self.norm_call(&m.method.to_string(), Some(&m.receiver), m.args.iter().collect(), reads),
             Expr::Call(c) => {
                 let head = literal(&c.func).unwrap_or_else(|| "f".into());
                 self.norm_call(&head, None, c.args.iter().collect(), reads)
             }
-            Expr::Let(l) => format!("let {}", self.norm(&l.expr, reads)),
-            Expr::Cast(c) => self.norm(&c.expr, reads),
             _ => "?".to_string(),
         }
     }
@@ -243,15 +259,7 @@ impl BlockState {
     }
 
     fn compare_atom(&mut self, b: &syn::ExprBinary, negated: bool, block: u32) {
-        let op = match (&b.op, negated) {
-            (BinOp::Eq(_), false) | (BinOp::Ne(_), true) => 1,
-            (BinOp::Ne(_), false) | (BinOp::Eq(_), true) => 2,
-            (BinOp::Lt(_), _) => 3,
-            (BinOp::Le(_), _) => 4,
-            (BinOp::Gt(_), _) => 5,
-            (BinOp::Ge(_), _) => 6,
-            _ => 7,
-        };
+        let op = cmp_code(&b.op, negated);
         let (l, r) = (&*b.left, &*b.right);
         // var op literal, or literal op var (mirror the ordering operators).
         let pair = match (place(l), literal(r), place(r), literal(l)) {
@@ -394,12 +402,22 @@ fn mirror(op: u8) -> u8 {
 }
 
 fn op_text(op: &BinOp) -> &'static str {
-    match op {
+    arith_text(op).or_else(|| logic_text(op)).unwrap_or("op")
+}
+
+fn arith_text(op: &BinOp) -> Option<&'static str> {
+    Some(match op {
         BinOp::Add(_) => "+",
         BinOp::Sub(_) => "-",
         BinOp::Mul(_) => "*",
         BinOp::Div(_) => "/",
         BinOp::Rem(_) => "%",
+        _ => return None,
+    })
+}
+
+fn logic_text(op: &BinOp) -> Option<&'static str> {
+    Some(match op {
         BinOp::And(_) => "&&",
         BinOp::Or(_) => "||",
         BinOp::Eq(_) => "==",
@@ -408,6 +426,19 @@ fn op_text(op: &BinOp) -> &'static str {
         BinOp::Le(_) => "<=",
         BinOp::Gt(_) => ">",
         BinOp::Ge(_) => ">=",
-        _ => "op",
+        _ => return None,
+    })
+}
+
+/// `BC` operator code of a comparison; negation turns eq into neq and back.
+fn cmp_code(op: &BinOp, negated: bool) -> u8 {
+    match (op, negated) {
+        (BinOp::Eq(_), false) | (BinOp::Ne(_), true) => 1,
+        (BinOp::Ne(_), false) | (BinOp::Eq(_), true) => 2,
+        (BinOp::Lt(_), _) => 3,
+        (BinOp::Le(_), _) => 4,
+        (BinOp::Gt(_), _) => 5,
+        (BinOp::Ge(_), _) => 6,
+        _ => 7,
     }
 }

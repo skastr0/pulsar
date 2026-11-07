@@ -10,7 +10,6 @@ mod cargo;
 mod graph;
 mod parse;
 
-pub use blocks::BlockRows;
 
 use crate::lang::functions::FileFns;
 use rayon::prelude::*;
@@ -66,8 +65,6 @@ pub fn function_facts(key_path: &str, source: &str) -> FileFns {
 pub struct FileOut {
     pub fns: FileFns,
     pub tests: Vec<u32>,
-    /// Decision-block rows (`BL` `BW` `BR` `BC`) of every function in the file, local ids.
-    pub blocks: BlockRows,
 }
 
 #[derive(Debug, Default)]
@@ -160,7 +157,7 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
         i_facts: i.len(),
         u_facts: u.len(),
     };
-    let per_file = parsed.into_iter().map(|p| FileOut { fns: p.fns, tests: p.tests, blocks: p.blocks }).collect();
+    let per_file = parsed.into_iter().map(|p| FileOut { fns: p.fns, tests: p.tests }).collect();
     Ok(Analysis { per_file, i, u, prod, trees, stats })
 }
 
