@@ -1,0 +1,86 @@
+[
+ {
+  "law": "cog_multi_arm_free",
+  "bug": "a multi-branch arm costs 1",
+  "old": "    case M.KArm{} CTry1{}:\n      1n+lvl",
+  "new": "    case M.KArm{} CMulti{}:\n      1n\n    case M.KArm{} CTry1{}:\n      1n+lvl"
+ },
+ {
+  "law": "cog_if_at_level",
+  "bug": "a branch ignores its level",
+  "old": "    case M.KBranch{} _:\n      1n+lvl",
+  "new": "    case M.KBranch{} _:\n      1n"
+ },
+ {
+  "law": "cog_loop_nests",
+  "bug": "a loop does not raise the level",
+  "old": "    case M.KLoop{}:\n      1n+lvl\n    case M.KArm{}:\n      Cog.klvl_arm",
+  "new": "    case M.KLoop{}:\n      lvl\n    case M.KArm{}:\n      Cog.klvl_arm"
+ },
+ {
+  "law": "cog_else_if_flat",
+  "bug": "an else-if costs 2",
+  "old": "    case M.KBranch{} CElif{}:\n      1n",
+  "new": "    case M.KBranch{} CElif{}:\n      2n"
+ },
+ {
+  "law": "cog_then_if_nests",
+  "bug": "a then arm does not raise the level",
+  "old": "    case CBr0{} _:\n      1n+lvl",
+  "new": "    case CBr0{} _:\n      lvl"
+ },
+ {
+  "law": "cog_catch",
+  "bug": "a catch ignores its level",
+  "old": "    case M.KArm{} CTry1{}:\n      1n+lvl",
+  "new": "    case M.KArm{} CTry1{}:\n      1n"
+ },
+ {
+  "law": "cog_same_op_once",
+  "bug": "a repeated && counts again",
+  "old": "    case OAnd{} OAnd{}:\n      0n",
+  "new": "    case OAnd{} OAnd{}:\n      1n"
+ },
+ {
+  "law": "cog_op_change",
+  "bug": "&& after another operator adds nothing",
+  "old": "    case OAnd{} _:\n      1n",
+  "new": "    case OAnd{} _:\n      0n"
+ },
+ {
+  "law": "cog_nested_fn_free",
+  "bug": "a nested function boundary costs 1",
+  "old": "    case _ _:\n      0n\n\ndef Cog.kctx_arm",
+  "new": "    case M.KFn{} _:\n      1n\n    case _ _:\n      0n\n\ndef Cog.kctx_arm"
+ },
+ {
+  "law": "cog_lines",
+  "bug": "lines reports against threshold + 1",
+  "old": "  Cog.fxs(Cog.findings(thr, Cog.measure_all(fs, ops)))",
+  "new": "  Cog.fxs(Cog.findings(Nat.add(thr, 1n), Cog.measure_all(fs, ops)))"
+ },
+ {
+  "law": "cog_measure_cons",
+  "bug": "every function reads the operators from the start",
+  "old": "Cog.measure_all(rest, CS.ops(s))",
+  "new": "Cog.measure_all(rest, ops)"
+ },
+ {
+  "law": "cog_findings_sound",
+  "bug": "findings report rule 1",
+  "old": "      M.Rule.check(8, fn, v, thr, rest)",
+  "new": "      M.Rule.check(1, fn, v, thr, rest)"
+ },
+ {
+  "law": "cog_findings_complete",
+  "bug": "findings treat every function as a test",
+  "old": "Cog.prod(test, fn, v, thr, Cog.findings(thr, t))",
+  "new": "Cog.prod(True{}, fn, v, thr, Cog.findings(thr, t))"
+ },
+ {
+  "law": "cog_skips_tests",
+  "bug": "test functions get findings",
+  "old": "    case True{}:\n      rest\n    case False{}:\n      M.Rule.check(8",
+  "new": "    case True{}:\n      M.Rule.check(8, fn, v, thr, rest)\n    case False{}:\n      M.Rule.check(8"
+ }
+]
