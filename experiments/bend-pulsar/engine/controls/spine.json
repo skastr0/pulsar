@@ -1,0 +1,156 @@
+[
+ {
+  "law": "verdict_import_adds_edge",
+  "bug": "Facts.apply drops self imports",
+  "file": "Facts.bend",
+  "old": "R.Resolve.count_res(R.Hit{dst}, src, False{}, acc)",
+  "new": "R.Resolve.count_res(R.Hit{dst}, src, True{}, acc)"
+ },
+ {
+  "law": "verdict_export_adds_edge",
+  "bug": "Facts.apply points an export at its source",
+  "file": "Facts.bend",
+  "old": "R.Resolve.count_res(R.Hit{dst}, src, True{}, acc)",
+  "new": "R.Resolve.count_res(R.Hit{src}, src, True{}, acc)"
+ },
+ {
+  "law": "verdict_export_self_dropped",
+  "bug": "Facts.apply keeps export self edges",
+  "file": "Facts.bend",
+  "old": "R.Resolve.count_res(R.Hit{dst}, src, True{}, acc)",
+  "new": "R.Resolve.count_res(R.Hit{dst}, src, False{}, acc)"
+ },
+ {
+  "law": "verdict_type_only_no_edge",
+  "bug": "Facts.apply forgets to count a type-only statement",
+  "file": "Facts.bend",
+  "old": "R.Acc{cur, all, bare, miss, dyn, req, U32.add(tonly, 1)}",
+  "new": "R.Acc{cur, all, bare, miss, dyn, req, tonly}"
+ },
+ {
+  "law": "verdict_exhaustive",
+  "bug": "Facts.kind2 gives a verdict outside K1-K4",
+  "file": "Facts.bend",
+  "old": "    case True{}:\n      E.KExport{}",
+  "new": "    case True{}:\n      E.KDynamic{}"
+ },
+ {
+  "law": "kind_is_value_kind",
+  "bug": "Facts.kind swaps hv and ht",
+  "file": "Facts.bend",
+  "old": "E.Extract.value_kind(Facts.flag(hv), Facts.flag(ht), Facts.edge_kind(form))",
+  "new": "E.Extract.value_kind(Facts.flag(ht), Facts.flag(hv), Facts.edge_kind(form))"
+ },
+ {
+  "law": "fact_type_only_not_edge",
+  "bug": "Facts.kind ignores ht",
+  "file": "Facts.bend",
+  "old": "E.Extract.value_kind(Facts.flag(hv), Facts.flag(ht), Facts.edge_kind(form))",
+  "new": "E.Extract.value_kind(Facts.flag(hv), False{}, Facts.edge_kind(form))"
+ },
+ {
+  "law": "fact_value_import_is_edge",
+  "bug": "Facts.edge_kind reads form 0 as export-from",
+  "file": "Facts.bend",
+  "old": "Facts.kind2(U32.is_eq(form, 2))",
+  "new": "Facts.kind2(U32.is_le(form, 2))"
+ },
+ {
+  "law": "fact_empty_clause_is_edge",
+  "bug": "Facts.kind treats an empty clause as type-only",
+  "file": "Facts.bend",
+  "old": "E.Extract.value_kind(Facts.flag(hv), Facts.flag(ht), Facts.edge_kind(form))",
+  "new": "E.Extract.value_kind(Facts.flag(hv), Bool.not(Facts.flag(hv)), Facts.edge_kind(form))"
+ },
+ {
+  "law": "fact_side_effect_import_is_edge",
+  "bug": "Facts.edge_kind reads form 1 as export-from",
+  "file": "Facts.bend",
+  "old": "Facts.kind2(U32.is_eq(form, 2))",
+  "new": "Facts.kind2(U32.is_ge(form, 1))"
+ },
+ {
+  "law": "fact_export_from_is_edge",
+  "bug": "Facts.kind2 reads export-from as type-only",
+  "file": "Facts.bend",
+  "old": "    case True{}:\n      E.KExport{}",
+  "new": "    case True{}:\n      E.KTypeOnly{}"
+ },
+ {
+  "law": "fact_export_self_dropped",
+  "bug": "Facts.kind2 reads export-from as import",
+  "file": "Facts.bend",
+  "old": "    case True{}:\n      E.KExport{}",
+  "new": "    case True{}:\n      E.KImport{}"
+ },
+ {
+  "law": "fact_import_self_kept",
+  "bug": "Resolve.add_edge2 drops every self edge",
+  "file": "../Resolve.bend",
+  "old": "    case True{} True{}:\n      Acc{cur, all, bare, miss, dyn, req, tonly}",
+  "new": "    case _ True{}:\n      Acc{cur, all, bare, miss, dyn, req, tonly}"
+ },
+ {
+  "law": "scope_set_sound",
+  "bug": "Scope.has2 says yes to every id",
+  "file": "Scope.bend",
+  "old": "    case None{}:\n      False{}",
+  "new": "    case None{}:\n      True{}"
+ },
+ {
+  "law": "scope_set_complete",
+  "bug": "Scope.set forgets the listed ids",
+  "file": "Scope.bend",
+  "old": "G.Graph.ins_comp(ids, 0n, G.TE{})",
+  "new": "G.Graph.ins_comp(Nil{}, 0n, G.TE{})"
+ },
+ {
+  "law": "scope_src_not_prod_no_edge",
+  "bug": "Scope.in_scope ignores the importing file",
+  "file": "Scope.bend",
+  "old": "Bool.and(Scope.has(t, src), Scope.has(t, dst))",
+  "new": "Scope.has(t, dst)"
+ },
+ {
+  "law": "scope_dst_not_prod_no_edge",
+  "bug": "Scope.in_scope ignores the target file",
+  "file": "Scope.bend",
+  "old": "Bool.and(Scope.has(t, src), Scope.has(t, dst))",
+  "new": "Scope.has(t, src)"
+ },
+ {
+  "law": "scope_both_prod_is_rule",
+  "bug": "Scope.add2 drops in-scope facts",
+  "file": "Scope.bend",
+  "old": "    case True{}:\n      F.Facts.add(f, acc)",
+  "new": "    case True{}:\n      acc"
+ },
+ {
+  "law": "pipeline_is_analyze",
+  "bug": "Pipeline.out analyses an empty graph",
+  "file": "Pipeline.bend",
+  "old": "G.Graph.analyze(adj)}",
+  "new": "G.Graph.analyze(Nil{})}"
+ },
+ {
+  "law": "pipeline_refuses_invalid",
+  "bug": "Pipeline.run skips validation",
+  "file": "Pipeline.bend",
+  "old": "Pipeline.run2(F.Facts.valid(fs, n, 0, True{}), n, prods, fs)",
+  "new": "Pipeline.run2(True{}, n, prods, fs)"
+ },
+ {
+  "law": "pipeline_cycles_are_graph_cycles",
+  "bug": "Pipeline.out miscounts edges",
+  "file": "Pipeline.bend",
+  "old": "G.Graph.edges(adj, 0)",
+  "new": "G.Graph.edges(adj, 1)"
+ },
+ {
+  "law": "report_shape",
+  "bug": "Report.res_lines prints the wrong header",
+  "file": "Pipeline.bend",
+  "old": "Con{\"pulsar-findings 0\", Report.tail(",
+  "new": "Con{\"pulsar-findings 1\", Report.tail("
+ }
+]
