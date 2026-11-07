@@ -1,0 +1,21 @@
+FN 0 parent=- kind=0 loc=24 lines=1-24 chain=g
+CT 0 1 0 4
+CT 0 2 1 1
+CT 0 3 2 2
+CT 0 4 3 7
+CT 0 5 1 4
+CT 0 6 5 6
+CT 0 7 5 7
+CT 0 8 0 5
+CT 0 9 8 2
+CT 0 10 8 2
+CT 0 11 10 7
+CT 0 12 8 10
+CT 0 13 0 3
+CT 0 14 13 2
+CT 0 15 14 7
+CT 0 16 13 2
+CT 0 17 13 2
+CT 0 18 13 9
+CT 0 19 13 2
+CT 0 20 19 7

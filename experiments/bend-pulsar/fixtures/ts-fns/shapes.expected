@@ -1,0 +1,17 @@
+FN 0 parent=- kind=2 loc=4 lines=1-4 chain=make
+FN 1 parent=0 kind=2 loc=1 lines=2-2 chain=make>inner
+FN 2 parent=0 kind=2 loc=1 lines=3-3 chain=make>#0
+FN 3 parent=- kind=2 loc=1 lines=7-7 chain=Box>value
+FN 4 parent=- kind=7 loc=1 lines=8-8 chain=Box>static
+FN 5 parent=- kind=6 loc=1 lines=9-9 chain=Box>constructor
+FN 6 parent=- kind=4 loc=1 lines=10-10 chain=Box>size
+FN 7 parent=- kind=5 loc=1 lines=11-11 chain=Box>size
+FN 8 parent=- kind=3 loc=4 lines=12-15 chain=Box>run
+FN 9 parent=8 kind=1 loc=1 lines=13-13 chain=Box>run>named
+FN 10 parent=- kind=0 loc=1 lines=18-18 chain=default
+FN 11 parent=- kind=3 loc=1 lines=19-19 chain=o>m
+FN 12 parent=- kind=2 loc=1 lines=19-19 chain=o>k
+CT 0 1 0 8
+CT 0 2 0 8
+CT 1 1 0 6
+CT 8 1 0 8

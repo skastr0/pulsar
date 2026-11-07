@@ -1,5 +1,7 @@
 //! Parse one file, decide each import-like statement's binding usage, drop the AST.
 
+use super::functions::Walker;
+use crate::lang::functions::FileFns;
 use oxc_allocator::Allocator;
 use oxc_ast::{ast::ImportDeclarationSpecifier, AstKind};
 use oxc_parser::Parser;
@@ -49,15 +51,17 @@ fn binding_use(scoping: &Scoping, sid: SymbolId) -> Use {
 
 pub struct Extracted {
     pub imports: Vec<RawImport>,
+    /// Functions and control trees, ids local to the file.
+    pub functions: FileFns,
     /// Parser hit a fatal error and returned an empty program.
     pub fatal: bool,
 }
 
-pub fn extract(alloc: &Allocator, path: &Path, source: &str) -> Extracted {
+pub fn extract(alloc: &Allocator, rel: &str, path: &Path, source: &str) -> Extracted {
     let source_type = SourceType::from_path(path).unwrap_or_else(|_| SourceType::ts());
     let ret = Parser::new(alloc, source, source_type).parse();
     if ret.fatal_error {
-        return Extracted { imports: Vec::new(), fatal: true };
+        return Extracted { imports: Vec::new(), functions: FileFns::default(), fatal: true };
     }
     let built = SemanticBuilder::new().with_build_nodes(true).build(&ret.program);
     let sem = built.semantic;
@@ -120,7 +124,8 @@ pub fn extract(alloc: &Allocator, path: &Path, source: &str) -> Extracted {
             _ => {}
         }
     }
-    Extracted { imports: out, fatal: false }
+    let functions = Walker::new(rel, source).run(&ret.program);
+    Extracted { imports: out, functions, fatal: false }
 }
 
 /// Old-Pulsar-compatible "is this exported name type-only in the target" check for

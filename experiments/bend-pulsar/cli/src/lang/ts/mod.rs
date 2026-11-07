@@ -2,12 +2,14 @@
 //! and push `F`, `K`, `I` and `U` facts into the shared writer.
 
 mod extract;
+pub mod functions;
 mod resolve;
 mod scope;
 
-use crate::facts::{stable_key, FactWriter, Rel, SideTables};
+use crate::facts::{stable_key, FactWriter, FnEntry, Rel, SideTables};
 use crate::git::git_ls_files;
 use extract::{extract, type_only_exports};
+use crate::lang::functions::{FileFns, NO_PARENT};
 use oxc_allocator::Allocator;
 use rayon::prelude::*;
 use resolve::{Resolution, Resolved};
@@ -18,6 +20,8 @@ pub struct FactSet {
     pub files: Vec<String>,
     /// Number of production files (`F ... 1`).
     pub prod: usize,
+    /// `FK` key of each function, indexed by `FN` id (the `.fns` order).
+    pub fn_keys: Vec<u64>,
 }
 
 #[derive(Default)]
@@ -28,6 +32,8 @@ pub struct Stats {
     pub unreadable: usize,
     pub i_facts: usize,
     pub u_facts: usize,
+    pub fns: usize,
+    pub ct: usize,
 }
 
 fn is_ts_source(p: &str) -> bool {
@@ -45,6 +51,8 @@ pub fn collect(repo: &Path, w: &mut FactWriter, tables: &mut SideTables) -> Resu
     collect_tracked(&root, tracked, w, tables)
 }
 
+/// Like `collect`, for a tree that is not a git checkout (for example one materialised from a
+/// sha): `tracked` is the tree's file list, repo-relative.
 pub fn collect_tracked(
     root: &Path,
     tracked: Vec<String>,
@@ -65,6 +73,7 @@ pub fn collect_tracked(
     struct PerFileOut {
         i: Vec<(u32, u8, u8, u8)>,
         u: Vec<u8>,
+        fns: FileFns,
         fatal: bool,
         unreadable: bool,
     }
@@ -78,6 +87,7 @@ pub fn collect_tracked(
     struct PerFile {
         i: Vec<IEntry>,
         u: Vec<u8>,
+        fns: FileFns,
         fatal: bool,
         unreadable: bool,
     }
@@ -88,10 +98,10 @@ pub fn collect_tracked(
             alloc.reset();
             let path = root.join(rel);
             let Ok(bytes) = std::fs::read(&path) else {
-                return PerFile { i: vec![], u: vec![], fatal: false, unreadable: true };
+                return PerFile { i: vec![], u: vec![], fns: FileFns::default(), fatal: false, unreadable: true };
             };
             let text = String::from_utf8_lossy(&bytes);
-            let ex = extract(alloc, &path, &text);
+            let ex = extract(alloc, rel, &path, &text);
             let mut i = Vec::new();
             let mut u = Vec::new();
             for imp in ex.imports {
@@ -106,7 +116,7 @@ pub fn collect_tracked(
                     Resolved::Unresolved(r) => u.push(r),
                 }
             }
-            PerFile { i, u, fatal: ex.fatal, unreadable: false }
+            PerFile { i, u, fns: ex.functions, fatal: ex.fatal, unreadable: false }
         })
         .collect();
 
@@ -135,7 +145,7 @@ pub fn collect_tracked(
             (*dst, names.iter().cloned().zip(flags).collect())
         })
         .collect();
-    let per: Vec<_> = per
+    let mut per: Vec<_> = per
         .iter_mut()
         .map(|p| {
             let mut i: Vec<(u32, u8, u8, u8)> = Vec::with_capacity(p.i.len());
@@ -154,7 +164,7 @@ pub fn collect_tracked(
             i.dedup();
             p.u.sort_unstable();
             p.u.dedup();
-            PerFileOut { i, u: std::mem::take(&mut p.u), fatal: p.fatal, unreadable: p.unreadable }
+            PerFileOut { i, u: std::mem::take(&mut p.u), fns: std::mem::take(&mut p.fns), fatal: p.fatal, unreadable: p.unreadable }
         })
         .collect();
 
@@ -177,10 +187,49 @@ pub fn collect_tracked(
             w.push(Rel::U, &[src as u32, *r as u32]);
         }
     }
+    // Function ids are global: files in id order, functions in start-offset order within a file.
+    // Each file's rows move into the writer and are freed before the next file, so the per-file
+    // results and the writer's copy never coexist for the whole corpus.
+    let total_fns: usize = per.iter().map(|p| p.fns.fns.len()).sum();
+    let total_ct: usize = per.iter().map(|p| p.fns.ct.len()).sum();
+    w.reserve(Rel::Fn, total_fns);
+    w.reserve(Rel::Fk, total_fns);
+    w.reserve(Rel::Ct, total_ct);
+    w.push(Rel::M, &[total_fns as u32]);
+    tables.fns.reserve(total_fns);
+    let mut fn_keys = Vec::with_capacity(total_fns);
+    let mut base = 0u32;
+    for (file, p) in per.iter_mut().enumerate() {
+        let FileFns { fns, mut ct } = std::mem::take(&mut p.fns);
+        let count = fns.len() as u32;
+        for (local, f) in fns.into_iter().enumerate() {
+            let id = base + local as u32;
+            let parent = f.parent.map(|l| base + l);
+            w.push(Rel::Fn, &[id, file as u32, parent.unwrap_or(NO_PARENT), f.loc]);
+            w.push(Rel::Fk, &[id, (f.key >> 32) as u32, (f.key & 0xffff_ffff) as u32]);
+            fn_keys.push(f.key);
+            tables.fns.push(FnEntry {
+                file: file as u32,
+                start_line: f.start_line,
+                end_line: f.end_line,
+                parent,
+                kind: f.kind,
+                chain: f.chain,
+            });
+        }
+        // Canonical (fn, node) order, so the writer's sorted fast path applies.
+        ct.sort_unstable_by_key(|c| (c.fn_local, c.node));
+        st.ct += ct.len();
+        for c in &ct {
+            w.push(Rel::Ct, &[base + c.fn_local, c.node, c.parent, c.kind as u32]);
+        }
+        base += count;
+    }
+    st.fns = total_fns;
     // I and U counts are post-dedup: per-file lists are already sorted and deduped above.
     st.i_facts = per.iter().map(|p| p.i.len()).sum();
     st.u_facts = per.iter().map(|p| p.u.len()).sum();
     tables.paths = files.clone();
     let prod = st.prod;
-    Ok((FactSet { files, prod }, st))
+    Ok((FactSet { files, prod, fn_keys }, st))
 }

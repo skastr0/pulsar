@@ -145,6 +145,12 @@ impl FactWriter {
         self.rows[rel.idx()].extend_from_slice(row);
     }
 
+    /// Reserve room for `rows` more rows of `rel`, so a lane that knows its count avoids the
+    /// doubling slack of a growing vector.
+    pub fn reserve(&mut self, rel: Rel, rows: usize) {
+        self.rows[rel.idx()].reserve_exact(rows * rel.arity());
+    }
+
     /// Fold another writer (for example a per-thread shard) into this one.
     #[allow(dead_code)]
     pub fn merge(&mut self, other: FactWriter) {
@@ -159,29 +165,37 @@ impl FactWriter {
         let mut buf = std::io::BufWriter::with_capacity(1 << 20, out);
         writeln!(buf, "{}", self.header).map_err(w)?;
         let mut counts = Counts::default();
-        let mut line = String::new();
+        let mut line: Vec<u8> = Vec::with_capacity(64);
         for rel in Rel::ALL {
             let data = &self.rows[rel.idx()];
             let k = rel.arity();
             let n = data.len() / k;
-            let mut order: Vec<u32> = (0..n as u32).collect();
             let row = |i: u32| &data[i as usize * k..(i as usize + 1) * k];
-            order.sort_unstable_by(|&a, &b| row(a).cmp(row(b)));
+            // Lanes that push in canonical order (strictly increasing rows) skip the index sort.
+            let sorted = (1..n as u32).all(|i| row(i - 1) < row(i));
+            let order: Vec<u32> = if sorted {
+                Vec::new()
+            } else {
+                let mut o: Vec<u32> = (0..n as u32).collect();
+                o.sort_unstable_by(|&a, &b| row(a).cmp(row(b)));
+                o
+            };
             let mut prev: Option<&[u32]> = None;
-            for &i in &order {
+            for pos in 0..n {
+                let i = if sorted { pos as u32 } else { order[pos] };
                 let r = row(i);
                 if prev == Some(r) {
                     continue;
                 }
                 prev = Some(r);
                 line.clear();
-                line.push_str(rel.tag());
+                line.extend_from_slice(rel.tag().as_bytes());
                 for v in r {
-                    line.push(' ');
+                    line.push(b' ');
                     push_u32(&mut line, *v);
                 }
-                line.push('\n');
-                buf.write_all(line.as_bytes()).map_err(w)?;
+                line.push(b'\n');
+                buf.write_all(&line).map_err(w)?;
                 counts.0[rel.idx()] += 1;
             }
         }
@@ -190,9 +204,18 @@ impl FactWriter {
     }
 }
 
-fn push_u32(s: &mut String, v: u32) {
-    use std::fmt::Write as _;
-    let _ = write!(s, "{v}");
+fn push_u32(out: &mut Vec<u8>, mut v: u32) {
+    let mut tmp = [0u8; 10];
+    let mut i = tmp.len();
+    loop {
+        i -= 1;
+        tmp[i] = b'0' + (v % 10) as u8;
+        v /= 10;
+        if v == 0 {
+            break;
+        }
+    }
+    out.extend_from_slice(&tmp[i..]);
 }
 
 /// Stable file key: FNV-1a 64 over the UTF-8 bytes of the repo-relative path
@@ -245,17 +268,16 @@ impl SideTables {
         let p = sibling(".paths");
         std::fs::write(&p, s).map_err(|e| format!("{}: {e}", p.display()))?;
 
-        let mut s = String::new();
+        let p = sibling(".fns");
+        let file = std::fs::File::create(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+        let mut out = std::io::BufWriter::new(file);
         for (id, f) in self.fns.iter().enumerate() {
             let path = self.paths.get(f.file as usize).map(String::as_str).unwrap_or("");
             let parent = f.parent.map_or("-".to_string(), |p| p.to_string());
-            s.push_str(&format!(
-                "{id}\t{path}\t{}\t{}\t{parent}\t{}\t{}\n",
-                f.start_line, f.end_line, f.kind, f.chain
-            ));
+            writeln!(out, "{id}\t{path}\t{}\t{}\t{parent}\t{}\t{}", f.start_line, f.end_line, f.kind, f.chain)
+                .map_err(|e| format!("{}: {e}", p.display()))?;
         }
-        let p = sibling(".fns");
-        std::fs::write(&p, s).map_err(|e| format!("{}: {e}", p.display()))
+        out.flush().map_err(|e| format!("{}: {e}", p.display()))
     }
 }
 
@@ -297,6 +319,22 @@ mod tests {
         b.push(Rel::Sy, &[1]);
         a.merge(b);
         assert_eq!(render(a), "pulsar-facts 0\nSY 1\nSY 3\n");
+    }
+
+    #[test]
+    fn sorted_rows_take_the_fast_path_and_print_the_same_text() {
+        let mut sorted = FactWriter::new();
+        let mut shuffled = FactWriter::new();
+        let rows: [[u32; 4]; 4] = [[0, 1, 0, 1], [0, 2, 1, 2], [1, 1, 0, 4_294_967_295], [1, 2, 1, 10]];
+        for r in rows {
+            sorted.push(Rel::Ct, &r);
+        }
+        for r in [rows[2], rows[0], rows[3], rows[1], rows[0]] {
+            shuffled.push(Rel::Ct, &r);
+        }
+        let text = render(sorted);
+        assert_eq!(text, render(shuffled));
+        assert_eq!(text, "pulsar-facts 0\nCT 0 1 0 1\nCT 0 2 1 2\nCT 1 1 0 4294967295\nCT 1 2 1 10\n");
     }
 
     #[test]

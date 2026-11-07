@@ -1,0 +1,11 @@
+FN 0 parent=- kind=0 loc=9 lines=1-9 chain=f
+CT 0 1 0 1
+CT 0 2 1 2
+CT 0 3 2 7
+CT 0 4 1 2
+CT 0 5 4 1
+CT 0 6 5 2
+CT 0 7 6 7
+CT 0 8 0 1
+CT 0 9 8 2
+CT 0 10 8 2

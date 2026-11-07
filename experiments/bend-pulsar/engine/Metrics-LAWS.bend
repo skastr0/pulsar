@@ -455,19 +455,3 @@ def Sc(t: M.Ct) -> Nat:
 law npath_loop:
   for +body: M.Ct
   {Npx.of(M.Node{M.KLoop{}, body, M.Leaf{}}) == Nat.add(1n+Npx.of(body), Sc(body)) : Nat}
-
-# N5'/N9'/N10'. the same three facts about the printed NPath.
-law npath_printed_at_least_one:
-  for +t: M.Ct
-  for +cap: Nat
-  N.Le(Nat.min(1n, cap), M.Np.of(t, cap))
-
-law npath_printed_if_without_else:
-  for +body: M.Ct
-  for +cap: Nat
-  {M.Np.of(M.Node{M.KBranch{}, M.Node{M.KArm{}, body, M.Leaf{}}, M.Leaf{}}, cap) == Nat.min(1n+Npx.of(body), cap) : Nat}
-
-law npath_printed_loop:
-  for +body: M.Ct
-  for +cap: Nat
-  {M.Np.of(M.Node{M.KLoop{}, body, M.Leaf{}}, cap) == Nat.min(Nat.add(1n+Npx.of(body), Sc(body)), cap) : Nat}

@@ -786,42 +786,26 @@ def Layers.hub_min() -> U32:
 type Hub is Data:
   Hub{s: U32, k: U32, a: U32, b: U32}
 
-# The hub checker reads the fan-in from tallies of these two lists, one pass
-# each: the svc of every LQ fact, and the svc of every US fact whose function is
-# not in the LC set. Layers-LAWS H1 states the counts as TL.Count over them.
-def Hb.lq_ids(lqs: List<&2, Lq>) -> List<&2, U32>:
+# LQ facts naming s: the layers that require s.
+def Hb.cnt_lq(lqs: List<&2, Lq>, +s: U32) -> U32:
   match lqs:
     case Nil{}:
-      Nil{}
-    case Con{Lq{l, s}, t}:
-      Con{s, Hb.lq_ids(t)}
+      0
+    case Con{Lq{l, s2}, t}:
+      U32.add(Bool.to_u32(U32.is_eq(s2, s)), Hb.cnt_lq(t, s))
 
-def Hb.lc_fns(lcs: List<&2, Lc>) -> List<&2, U32>:
-  match lcs:
-    case Nil{}:
-      Nil{}
-    case Con{Lc{l, f}, t}:
-      Con{f, Hb.lc_fns(t)}
-
-# Functions that are some layer's constructor body (Scope-LAWS SC1-SC2: exactly
-# the listed ids).
-def Hb.lc_set(lcs: List<&2, Lc>) -> G.Tr:
-  S.Scope.set(Hb.lc_fns(lcs))
-
-def Hb.us_ids(uss: List<&2, Us>, +lct: G.Tr) -> List<&2, U32>:
+# US facts naming s whose function is not a layer constructor (LC).
+def Hb.cnt_us(uss: List<&2, Us>, +lcs: List<&2, Lc>, +s: U32) -> U32:
   match uss:
     case Nil{}:
-      Nil{}
-    case Con{Us{+f, s}, t}:
-      Layers.push_u(Bool.not(S.Scope.has(lct, f)), s, Hb.us_ids(t, lct))
+      0
+    case Con{Us{f, s2}, t}:
+      U32.add(Bool.to_u32(Bool.and(U32.is_eq(s2, s), Bool.not(Lc.has_fn(lcs, f)))), Hb.cnt_us(t, lcs, s))
 
-def Hb.cnt(+t: G.Tr, +s: U32) -> U32:
-  U32.from_nat(G.Graph.cnt_of(G.Tr.getu(t, s)))
-
-def Hb.check(+ta: G.Tr, +tb: G.Tr, h: Hub) -> Bool:
+def Hb.check(+lf: LF, h: Hub) -> Bool:
   match h:
     case Hub{+s, +k, +a, +b}:
-      Bool.and(Bool.and(U32.is_eq(a, Hb.cnt(ta, s)), U32.is_eq(b, Hb.cnt(tb, s))), Bool.and(U32.is_eq(k, U32.add(a, b)), U32.is_ge(k, Layers.hub_min())))
+      Bool.and(Bool.and(U32.is_eq(a, Hb.cnt_lq(LF.lqs(lf), s)), U32.is_eq(b, Hb.cnt_us(LF.uss(lf), LF.lcs(lf), s))), Bool.and(U32.is_eq(k, U32.add(a, b)), U32.is_ge(k, Layers.hub_min())))
 
 def Hb.push(c: Bool, x: Hub, acc: List<&2, Hub>) -> List<&2, Hub>:
   match c:
@@ -830,12 +814,27 @@ def Hb.push(c: Bool, x: Hub, acc: List<&2, Hub>) -> List<&2, Hub>:
     case False{}:
       acc
 
-def Hb.keep(cs: List<&2, Hub>, +ta: G.Tr, +tb: G.Tr) -> List<&2, Hub>:
+def Hb.keep(cs: List<&2, Hub>, +lf: LF) -> List<&2, Hub>:
   match cs:
     case Nil{}:
       Nil{}
     case Con{+c, t}:
-      Hb.push(Hb.check(ta, tb, c), c, Hb.keep(t, ta, tb))
+      Hb.push(Hb.check(lf, c), c, Hb.keep(t, lf))
+
+# Search: tallies in two tries, one pass each, then every service at or over the bar.
+def Hb.lq_ids(lqs: List<&2, Lq>) -> List<&2, U32>:
+  match lqs:
+    case Nil{}:
+      Nil{}
+    case Con{Lq{l, s}, t}:
+      Con{s, Hb.lq_ids(t)}
+
+def Hb.us_ids(uss: List<&2, Us>, +lcs: List<&2, Lc>) -> List<&2, U32>:
+  match uss:
+    case Nil{}:
+      Nil{}
+    case Con{Us{+f, s}, t}:
+      Layers.push_u(Bool.not(Lc.has_fn(lcs, f)), s, Hb.us_ids(t, lcs))
 
 def Hb.cand2(+a: U32, +b: U32, s: U32, acc: List<&2, Hub>) -> List<&2, Hub>:
   Hb.push(U32.is_ge(U32.add(a, b), Layers.hub_min()), Hub{s, U32.add(a, b), a, b}, acc)
@@ -845,19 +844,10 @@ def Hb.cands(ss: List<&2, U32>, +ta: G.Tr, +tb: G.Tr) -> List<&2, Hub>:
     case Nil{}:
       Nil{}
     case Con{+s, t}:
-      Hb.cand2(Hb.cnt(ta, s), Hb.cnt(tb, s), s, Hb.cands(t, ta, tb))
-
-def Hb.ta(+lf: LF) -> G.Tr:
-  G.Graph.cnt_all(Hb.lq_ids(LF.lqs(lf)), G.TE{})
-
-def Hb.tb(+lf: LF) -> G.Tr:
-  G.Graph.cnt_all(Hb.us_ids(LF.uss(lf), Hb.lc_set(LF.lcs(lf))), G.TE{})
-
-def Hb.hubs2(+lf: LF, +ta: G.Tr, +tb: G.Tr) -> List<&2, Hub>:
-  Hb.keep(Hb.cands(Layers.iota(U32.to_nat(LF.ns(lf)), 0), ta, tb), ta, tb)
+      Hb.cand2(U32.from_nat(G.Graph.cnt_of(G.Tr.getu(ta, s))), U32.from_nat(G.Graph.cnt_of(G.Tr.getu(tb, s))), s, Hb.cands(t, ta, tb))
 
 def Layers.hubs(+lf: LF) -> List<&2, Hub>:
-  Hb.hubs2(lf, Hb.ta(lf), Hb.tb(lf))
+  Hb.keep(Hb.cands(Layers.iota(U32.to_nat(LF.ns(lf)), 0), G.Graph.cnt_all(Hb.lq_ids(LF.lqs(lf)), G.TE{}), G.Graph.cnt_all(Hb.us_ids(LF.uss(lf), LF.lcs(lf)), G.TE{})), lf)
 
 # ---- validity ---------------------------------------------------------------------------------
 # Ids are below the header counts, and every relation is strictly ascending

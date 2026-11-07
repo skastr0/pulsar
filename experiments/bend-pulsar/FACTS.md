@@ -73,20 +73,31 @@ Function ids are `0..m-1`, in the order (file id, start offset). Ids are per run
 | Tag | Fields | Meaning |
 |---|---|---|
 | `M` | `fn_count` | Header line, before any function relation |
-| `FN` | `fn file parent loc` | A function, method, closure or arrow function. `parent` is the enclosing function, or `4294967295` at top level. `loc` is its non-blank lines. |
-| `FK` | `fn hi lo` | Stable key: a hash of path, container chain, name, kind and ordinal, never a line. Anonymous functions are named by their ordinal within the parent. |
-| `CT` | `node fn parent kind` | One node of the function's control tree. Ids start at 1 within each function; `parent = 0` is the function body. Children of the same parent, in source order, are sequential. |
+| `FN` | `fn file parent loc` | A function, method, closure or arrow function. `parent` is the enclosing function, or `4294967295` at top level. `loc` is the number of non-blank lines in its span, nested functions included (only `CT` excludes them). |
+| `FK` | `fn hi lo` | Stable key: a 64-bit hash of path, container chain, name, kind and ordinal, never a line. See "`FK` key and kinds". |
+| `CT` | `fn node parent kind` | One node of the function's control tree. `node` ids are exactly `1..k` per function, in preorder, so sibling order is id order; `parent = 0` is the function body, and a parent id is always smaller than its child's. Sorted by `(fn, node)`. |
 
-**`CT` kinds**, all language-neutral:
-- 1 = branch (`if`, `if let`, ternary). Its children are arms.
+**`FK` key and kinds.**
+- **Kind** (hashed, and the `kind` column of `.fns`): 0 = declaration, 1 = function expression (`function` keyword, named or not), 2 = arrow function or closure (TS arrow, Rust closure), 3 = method, 4 = getter, 5 = setter, 6 = constructor, 7 = static block.
+- **Key** = FNV-1a 64 (the `K` constants) over these parts, each followed by a zero byte: the repo-relative path; the container names outermost first, joined by `0x1f`; the function's own name (empty if anonymous); the kind byte; the ordinal in decimal. The `FK` row is the key's high and low U32 halves.
+- **Ordinal:** for a named function, its index among functions with the same (container chain, name, kind) in source order. For an anonymous one, its index among the anonymous functions of the same container chain.
+- **Containers:** classes, object literals bound to a name, and the enclosing functions, each by the name it has in its own chain.
+- **Names are syntactic and never depend on a pack,** so keys do not change when a pack switches on. A function is named by its own id; by `const x = <fn>`; by a property, method or class-field key; by its class (constructor); by `default` for `export default`; and the first function-valued argument of a call that is itself a declarator initialiser, property value or class-field value takes that name (`memo(fn)`, `Effect.fn("n")(function* () {})`). Otherwise it is anonymous and shown as `#<ordinal>` in `.fns`.
+- A function with no body (an overload signature, `declare function`) emits nothing.
+
+**`CT` kinds**, all language-neutral. The adapter reports syntax; the engine decides what counts.
+- 1 = branch (`if`, `if let`, ternary). Its children are arms. `else if` is an else arm containing a nested branch.
 - 2 = arm, one alternative body. A branch with no else arm gets an implicit empty one, added by the engine, not the adapter.
-- 3 = multi-branch (`switch`, `match`). Its children are arms. The adapter emits a flag child, kind 9, when there is a default or wildcard arm.
-- 4 = loop (`for`, `while`, `do`, `for of/in`, `loop`, iterator chains are not loops).
-- 5 = try. Its children are arms: the body, each catch, and finally.
-- 6 = short-circuit operator (`&&`, `||`, `??`) inside a condition.
-- 7 = early exit that is not the last statement (`return`, `break`, `continue`, `throw`, Rust `?`).
-- 8 = nested function boundary. The subtree belongs to the nested `FN`, so it's excluded from this function's metrics.
-- 9 = default or wildcard flag.
+- 3 = multi-branch (`switch`, `match`). One arm per case, empty fall-through cases included. The adapter emits a flag child, kind 9, when there is a default or wildcard arm; the default arm is also emitted.
+- 4 = loop (`for`, `while`, `do`, `for of/in`, `loop`, iterator chains are not loops). Its children are the nodes of its condition and body directly, with no arm.
+- 5 = try. Its children are arms: the body and each catch are kind 2, and a finally is kind 10.
+- 6 = short-circuit operator: one node per `&&`, `||`, `??`, `&&=`, `||=` or `??=` occurrence, wherever it appears in the function. Its parent is the innermost enclosing control node (for a condition: the branch, loop or multi-branch it guards). The operator itself is not encoded.
+- 7 = early exit that is not the last statement (`return`, `break`, `continue`, `throw`, Rust `?`). The final top-level `return` or `throw` of a function body, and a `break` that ends a switch case, are not emitted.
+- 8 = nested function boundary: a leaf in the parent's tree. The k-th kind-8 node of a function pairs with the k-th function whose `parent` it is, in source order. The nested function has its own tree, starting again at node 1.
+- 9 = default or wildcard flag, a leaf child of a multi-branch.
+- 10 = finally arm, a body that runs on every path.
+
+The engine rejects a tree whose ids are not `1..k` in order, whose parent is not smaller than its child, whose kind is outside 1 to 10, or whose parent has kind 6, 7, 8 or 9.
 
 The engine computes cyclomatic complexity, cognitive-style nesting, NPath (Nejmeh 1988) and size from the control tree. Its rules state which kinds count. Every threshold sits in the rule, with a rule id.
 
@@ -131,36 +142,15 @@ Repo classes start at 1000.
 
 ### Effect pack
 
-Read by `engine/Layers.bend` (layer-graph detectors; laws in `engine/Layers-LAWS.bend`). Ids are dense per kind: layers `0..nl-1`, services `0..ns-1`, roots `0..nr-1`; `fn` and `file` ids are the v0/v1 ones. Every relation is strictly ascending in its fields, and the engine refuses (exit 2) a fact set that is not, or that names an id at or above its header count.
-
 | Tag | Fields | Meaning |
 |---|---|---|
-| `E` | `nl ns nr` | Header: layer, service and root counts (each at most 2^24). Exactly one. |
-| `SV` | `svc file kind` | A service definition (`Context.Service`, `Context.Tag`, `Effect.Service`); its key is the service's tag string, hashed. `kind` 1 = the service has a default implementation (always provided), 0 = not. |
+| `SV` | `svc file` | A service definition (`Context.Service`, `Context.Tag`, `Effect.Service`). Its key is the service's tag string, hashed. |
 | `LY` | `layer file svc` | A layer that builds service `svc`. |
 | `LQ` | `layer svc` | Layer `layer` requires `svc` (a `yield*` in its constructor, or a listed dependency). |
-| `LP` | `outer inner mode` | Layer composition: `mode` 1 = provide (also v3 `dependencies`), 2 = provideMerge, 3 = merge. |
-| `LR` | `root layer` | Provider root `root` (a `Layer.launch`, `Effect.provide(…, layer)` or `ManagedRuntime.make` site) is given `layer`. |
-| `RT` | `root file fn` | Where root `root` is: its file and enclosing function. |
-| `LC` | `layer fn` | Function `fn` is layer `layer`'s constructor body. |
-| `LO` | `layer` | Opaque: a layer whose composition the adapter cannot see (built from a computed value, or imported from outside the repo). |
+| `LP` | `outer inner mode` | Layer composition: `mode` 1 = provide, 2 = provideMerge, 3 = merge. |
 | `US` | `fn svc` | Function `fn` uses `svc` (`yield*` of the service). |
 
 With the type lane on, `LQ` and `US` become exact: they come from the requirement channel instead of syntax. The pack's catalog covers `effect` and `@effect/sql` (including `@effect/sql-pg`): `sql` tagged templates, `SqlResolver`, `SqlSchema` and `Model.makeRepository`, all as class 1 (query).
-
-**Definitions the detectors use.** `LP` edges are followed from `outer` to `inner`, ignoring `mode` and order; this over-approximates what a root provides, so a reported gap is never a false positive of the walk. A layer is *reachable at root r* if an `LP` walk leads to it from a layer of some `LR r _` fact. Service `s` is *provided at r* if a layer reachable at r builds s (`LY`), or s has `SV` kind 1. A root that reaches an `LO` layer reports nothing missing (it prints `LOPQ` instead).
-
-**Output (`pulsar-layers 0`), one line per finding, sorted:**
-
-| Line | Fields | Rule |
-|---|---|---|
-| `LCYC n ids…` | a layer requirement cycle: layer u → w when u requires a service w builds | effect/layer-cycle |
-| `LCERT 0\|1` | 1 = the cycle list is certified complete (Graph laws H, J) | |
-| `LUNP r l s x walk…` | at root r, reachable layer l requires s and s is not provided; `walk` is the `LP` path from r's layer x to l | effect/unprovided-service |
-| `LOPQ r l` | root r reaches opaque layer l, so its gaps are not reported | |
-| `LDUP s a b w na wa… wb…` | layers a < b both build s and both are reachable from layer w (walks wa, wb) | effect/duplicate-builder |
-| `LHUB s k a b` | service s has fan-in k = a `LQ` layers + b `US` functions that are no layer's constructor, with k ≥ the threshold | effect/hub-service |
-| `LS nl ns edges cycles unp dups hubs hub_min` | summary; `hub_min` is the threshold in force (default 10) | |
 
 ### Later
 
