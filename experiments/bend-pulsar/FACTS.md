@@ -199,7 +199,7 @@ After evaluating both shas, `pulsar delta` runs the engine twice more, each time
 | `KD` | `0` | The switch. Exactly one; without it there is no delta section. |
 | `KB` | `hi lo` | A base finding key, its 64 bits as two U32s. A base finding that git's rename matching pairs with a head finding is written with the head key. |
 | `KH` | `hi lo cls` | A head finding key. `cls` 0 is plain, 1 needs coverage (listed apart, never added), and 2 is plain and allowed by a decision committed at head. |
-| `MB` | `hi lo m v` | Measure `m` of function key (hi lo) at base, rename-mapped like `KB`. `m`: 0 cyclomatic, 1 nesting, 2 npath, 3 length, 4 cognitive. Higher `v` is worse for every `m`. Only the functions the CLI reports trends for (all of them with `--trend`), five rows each. A value above U32 refuses the run. |
+| `MB` | `hi lo m v` | Measure `m` of function key (hi lo) at base, rename-mapped like `KB`. `m`: 0 cyclomatic, 1 nesting, 2 npath, 3 length, 4 cognitive. Higher `v` is worse for every `m`. Only the functions the CLI reports trends for (all of them with `--trend`), and only the measures that differ between base and head: an equal pair would print nothing, so the rows grow with what the change touched, not with the repo. A value above U32 refuses the run. |
 | `MH` | `hi lo m v` | The same at head. |
 
 A key is (hi, lo, m), with m = 0 for `KB` and `KH`. A key repeated within `KB`, `KH`, `MB` or `MH`, a `cls` above 2, or a wrong field count refuses the run.

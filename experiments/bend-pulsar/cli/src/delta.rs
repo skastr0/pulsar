@@ -817,8 +817,11 @@ fn compare<'a>(before: &'a Eval, after: &'a Eval, renames: &Renames, trend_all: 
     // A finding whose key changed only because git renamed its file is the same finding.
     let pairs = rename::match_findings(&gone, &new, renames);
     let mut r = rows(&pairs.iter().copied().collect());
+    // Only the measures that differ are written: an equal pair yields no KDW or KDI line, so the
+    // engine's output is the same, and the rows grow with what the change touched, not with the
+    // number of functions in the repo (`--trend` tracks all of them).
     for (k, old, new) in tracked(before, after, renames, trend_all) {
-        for (i, (o, n)) in old.m.iter().zip(new.m).enumerate() {
+        for (i, (o, n)) in old.m.iter().zip(new.m).enumerate().filter(|(_, (o, n))| **o != *n) {
             r.measure_base(k, i as u32, *o)?;
             r.measure_head(k, i as u32, n)?;
         }
