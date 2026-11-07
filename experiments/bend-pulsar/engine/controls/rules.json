@@ -1,0 +1,14 @@
+[
+ {
+  "law": "join_sound",
+  "bug": "a constant term matches any field",
+  "old": "      Un.pick(U32.is_eq(c, x), e)",
+  "new": "      Some{e}"
+ },
+ {
+  "law": "join_complete",
+  "bug": "Join.one stops after the first tuple",
+  "old": "Join.push(Un.go(ts, x, Some{e}), Join.one(t, ts, e))",
+  "new": "Join.push(Un.go(ts, x, Some{e}), Nil{})"
+ }
+]
