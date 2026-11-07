@@ -90,5 +90,5 @@ The stack-graphs paper shows that syntax alone can handle type-directed lookups,
 
 - No published memory figure for tree-sitter, stack-graphs, or any SCIP indexer except scip-clang's per-TU numbers.
 - Stack-graphs accuracy is unpublished.
-- tsrs is about five weeks old per its repo creation date and its API is partial. Treat the type lane as experimental.
+- tsrs API: `getSymbolAtLocation`, `getTypeAtLocation` and `getReferencesToSymbolInFile` are documented as partial; check coverage of the calls the type lane needs before relying on them.
 - Next step: measure tree-sitter and oxc fact emission on the repo's own fixtures (`experiments/bend-pulsar/fixtures`) before fixing the schema.
