@@ -1,6 +1,8 @@
 mod coverage;
+mod delta;
 mod engine;
 mod facts;
+mod finding;
 mod git;
 mod history;
 mod lang;
@@ -12,17 +14,19 @@ use std::process::ExitCode;
 
 const USAGE: &str = "usage:
   pulsar facts <repo> [-o file] [--coverage path]   write facts (and <file>.paths, <file>.fns when -o is given)
+  pulsar delta <base> <head> [--repo dir] [--json]   findings added and removed between two shas (exit 1 if any added)
   pulsar cycles <repo> [--facts-out file]   run facts, then the engine, and print cycles";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let r = match args.first().map(String::as_str) {
-        Some("facts") => cmd_facts(&args[1..]),
-        Some("cycles") => cmd_cycles(&args[1..]),
+        Some("facts") => cmd_facts(&args[1..]).map(|()| 0),
+        Some("cycles") => cmd_cycles(&args[1..]).map(|()| 0),
+        Some("delta") => delta::parse(&args[1..]).and_then(|a| delta::run(&a)),
         _ => Err(USAGE.to_string()),
     };
     match r {
-        Ok(()) => ExitCode::SUCCESS,
+        Ok(code) => ExitCode::from(code),
         Err(e) => {
             eprintln!("pulsar: {e}");
             ExitCode::from(2)

@@ -42,6 +42,15 @@ fn is_ts_source(p: &str) -> bool {
 pub fn collect(repo: &Path, w: &mut FactWriter, tables: &mut SideTables) -> Result<(FactSet, Stats), String> {
     let root: PathBuf = std::fs::canonicalize(repo).map_err(|e| format!("{}: {e}", repo.display()))?;
     let tracked = git_ls_files(&root)?;
+    collect_tracked(&root, tracked, w, tables)
+}
+
+pub fn collect_tracked(
+    root: &Path,
+    tracked: Vec<String>,
+    w: &mut FactWriter,
+    tables: &mut SideTables,
+) -> Result<(FactSet, Stats), String> {
     let mut files: Vec<String> = tracked
         .iter()
         .filter(|p| is_ts_source(p) && root.join(p).is_file())
@@ -50,7 +59,7 @@ pub fn collect(repo: &Path, w: &mut FactWriter, tables: &mut SideTables) -> Resu
     files.sort();
     files.dedup();
 
-    let res = Resolution::new(&root, &files, &tracked);
+    let res = Resolution::new(root, &files, &tracked);
     drop(tracked);
 
     struct PerFileOut {
