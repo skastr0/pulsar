@@ -120,10 +120,10 @@ struct Measure {
     chain: String,
     line: u32,
     /// cyclomatic, nesting, npath, length
-    m: [u64; 4],
+    m: [u64; 5],
 }
 
-const METRICS: [&str; 4] = ["cyclomatic", "nesting", "npath", "length"];
+const METRICS: [&str; 5] = ["cyclomatic", "nesting", "npath", "length", "cognitive"];
 
 /// Everything one commit contributes to a delta.
 struct Eval {
@@ -352,7 +352,7 @@ fn metric_findings(
         let entry = tables.fns.get(x.fn_id as usize).ok_or_else(|| format!("FX names function {} but only {} exist", x.fn_id, tables.fns.len()))?;
         let key = *keys.get(x.fn_id as usize).ok_or("FX function has no FK key")?;
         let me = measures.get(&key).ok_or("FX function has no FM row")?;
-        let [cc, nest, npath, len] = me.m;
+        let [cc, nest, npath, len, cog] = me.m;
         let cap = if x.rule == "core.npath" && x.value >= 16_777_215 { "+ (at least the cap)" } else { "" };
         let tail: String = x.extra.iter().map(|(k, v)| format!(" {k}={v}")).collect();
         let extra: serde_json::Map<String, Value> = x.extra.iter().map(|(k, v)| (k.clone(), json!(v))).collect();
@@ -362,13 +362,13 @@ fn metric_findings(
             me.path.clone(),
             Some(me.chain.clone()),
             format!(
-                "{} {}{cap} > {} [cyclomatic {cc} nesting {nest} npath {npath} length {len}]{tail}",
+                "{} {}{cap} > {} [cyclomatic {cc} nesting {nest} npath {npath} length {len} cognitive {cog}]{tail}",
                 rule.id.trim_start_matches("core."),
                 x.value,
                 x.threshold
             ),
             json!({ "value": x.value, "threshold": x.threshold, "extra": extra,
-                    "metrics": { "cyclomatic": cc, "nesting": nest, "npath": npath, "length": len },
+                    "metrics": { "cyclomatic": cc, "nesting": nest, "npath": npath, "length": len, "cognitive": cog },
                     "lines": [entry.start_line, entry.end_line] }),
         );
         out.push(finding.at_line(me.line));
@@ -582,7 +582,7 @@ fn trends(before: &Eval, after: &Eval, renames: &Renames, all: bool) -> Vec<Tren
         if !all && !fb.contains(base_key) && !fa.contains(key) {
             continue;
         }
-        let changes: Vec<_> = (0..4).filter(|&i| old.m[i] != new.m[i]).map(|i| (METRICS[i], old.m[i], new.m[i])).collect();
+        let changes: Vec<_> = (0..5).filter(|&i| old.m[i] != new.m[i]).map(|i| (METRICS[i], old.m[i], new.m[i])).collect();
         if changes.is_empty() {
             continue;
         }

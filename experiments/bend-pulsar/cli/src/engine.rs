@@ -11,9 +11,9 @@ pub struct Findings {
     pub files: u64,
     pub edges: u64,
     pub cycle_count: u64,
-    /// `FM`: per function id, `[cyclomatic, nesting, npath, length]`. Empty when the run had no
+    /// `FM`: per function id, `[cyclomatic, nesting, npath, length, cognitive]`. Empty when the run had no
     /// functions.
-    pub fm: Vec<[u64; 4]>,
+    pub fm: Vec<[u64; 5]>,
     /// `FX`: metric findings, in engine order.
     pub fx: Vec<Fx>,
     /// `RCX`: class-in-context findings, sorted by (rule, site).
@@ -238,9 +238,9 @@ pub fn parse(text: &str) -> Result<Findings, String> {
                 if id != f.fm.len() {
                     return Err(format!("FM {id} out of order: expected {}", f.fm.len()));
                 }
-                let mut v = [0u64; 4];
+                let mut v = [0u64; 5];
                 for slot in &mut v {
-                    *slot = num(it.next().ok_or("FM needs cyclomatic nesting npath length")?)?;
+                    *slot = num(it.next().ok_or("FM needs cyclomatic nesting npath length cognitive")?)?;
                 }
                 f.fm.push(v);
             }
@@ -299,10 +299,10 @@ mod tests {
 
     #[test]
     fn parses_cycles_metrics_and_findings() {
-        let t = "pulsar-findings 0\nCYC 2 0 1\nCERT 1\nS 2 1 1\nFM 0 3 1 4 9\nFM 1 12 4 300 70\nFX core.cyclomatic 1 12 10\nFX core.nesting 1 4 3\n";
+        let t = "pulsar-findings 0\nCYC 2 0 1\nCERT 1\nS 2 1 1\nFM 0 3 1 4 9 2\nFM 1 12 4 300 70 15\nFX core.cyclomatic 1 12 10\nFX core.nesting 1 4 3\n";
         let f = parse(t).unwrap();
         assert_eq!(f.cycles, vec![vec![0, 1]]);
-        assert_eq!(f.fm, vec![[3, 1, 4, 9], [12, 4, 300, 70]]);
+        assert_eq!(f.fm, vec![[3, 1, 4, 9, 2], [12, 4, 300, 70, 15]]);
         assert_eq!(f.fx[1], Fx { rule: "core.nesting".into(), fn_id: 1, value: 4, threshold: 3, extra: vec![] });
     }
 
@@ -342,7 +342,7 @@ mod tests {
 
     #[test]
     fn rejects_out_of_order_fm_and_unknown_tags() {
-        assert!(parse("pulsar-findings 0\nFM 1 0 0 0 0\n").unwrap_err().contains("out of order"));
+        assert!(parse("pulsar-findings 0\nFM 1 0 0 0 0 0\n").unwrap_err().contains("out of order"));
         assert!(parse("pulsar-findings 0\nZZ 1\n").unwrap_err().contains("unknown"));
         assert!(parse("pulsar-findings 0\nFX core.nesting 1 4\n").unwrap_err().contains("threshold"));
     }
