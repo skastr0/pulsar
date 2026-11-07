@@ -122,6 +122,33 @@ pub struct Hook<'i> {
     at: u32,
 }
 
+fn gen_ctor(c: &CallExpression<'_>) -> Ctor {
+    match args(c).last().map(|a| a.get_inner_expression()) {
+        Some(Expression::FunctionExpression(f)) if f.generator => Ctor::Gen(f.span.start, f.span.end),
+        _ => Ctor::Opaque,
+    }
+}
+
+/// The member expression of `X.pipe(…)`.
+fn pipe_member<'b, 'a>(c: &'b CallExpression<'a>) -> Option<&'b StaticMemberExpression<'a>> {
+    match c.callee.get_inner_expression() {
+        Expression::StaticMemberExpression(m) if m.property.name == "pipe" => Some(m),
+        _ => None,
+    }
+}
+
+fn is_pipe_fn(sym: Option<&str>) -> bool {
+    matches!(sym, Some("effect#pipe") | Some("effect#Function.pipe"))
+}
+
+/// What a pipe step calls: the callee of a call, or the step itself.
+fn step_callee<'b, 'a>(st: &'b Expression<'a>) -> &'b Expression<'a> {
+    match st.get_inner_expression() {
+        Expression::CallExpression(sc) => &sc.callee,
+        other => other,
+    }
+}
+
 /// A symbol in the `effect` package itself, never a repo binding.
 fn r_is_lib(r: &Ref) -> bool {
     matches!(r, Ref::Sym(s) if s.starts_with("effect#") || s.starts_with("effect/"))
@@ -262,38 +289,29 @@ impl<'i> Hook<'i> {
     }
 
     fn ctor_of(&self, cx: &HookCx<'_>, e: &Expression<'_>) -> Ctor {
-        match e.get_inner_expression() {
-            Expression::CallExpression(c) => {
-                if self.sym(cx, &c.callee).as_deref() == Some("effect#Effect.gen") {
-                    return match args(c).last().map(|a| a.get_inner_expression()) {
-                        Some(Expression::FunctionExpression(f)) if f.generator => Ctor::Gen(f.span.start, f.span.end),
-                        _ => Ctor::Opaque,
-                    };
-                }
-                // `Effect.gen(…).pipe(…)`: a step that provides would hide requirements.
-                if let Expression::StaticMemberExpression(m) = c.callee.get_inner_expression() {
-                    if m.property.name == "pipe" {
-                        let provides = args(c).iter().any(|s| {
-                            let callee = match s.get_inner_expression() {
-                                Expression::CallExpression(sc) => &sc.callee,
-                                other => other,
-                            };
-                            self.sym(cx, callee).is_none_or(|n| n.contains("provide"))
-                        });
-                        return if provides { Ctor::Opaque } else { self.ctor_of(cx, &m.object) };
-                    }
-                }
-                // `makeRepo(deps)`: the generator `makeRepo` returns, when it is a named one.
-                match self.ref_of(cx, &c.callee) {
-                    Some(r @ Ref::Local(_)) => Ctor::Ref(r),
-                    Some(r @ Ref::Sym(_)) if !r_is_lib(&r) => Ctor::Ref(r),
-                    _ => Ctor::Opaque,
-                }
-            }
-            other => match self.ref_of(cx, other) {
-                Some(r) => Ctor::Ref(r),
-                None => Ctor::Opaque,
-            },
+        let Expression::CallExpression(c) = e.get_inner_expression() else {
+            return self.ref_of(cx, e).map_or(Ctor::Opaque, Ctor::Ref);
+        };
+        if self.sym(cx, &c.callee).as_deref() == Some("effect#Effect.gen") {
+            return gen_ctor(c);
+        }
+        if let Some(m) = pipe_member(c) {
+            return self.piped_ctor(cx, m, c);
+        }
+        // `makeRepo(deps)`: the generator `makeRepo` returns, when it is a named one.
+        match self.ref_of(cx, &c.callee) {
+            Some(r) if !r_is_lib(&r) => Ctor::Ref(r),
+            _ => Ctor::Opaque,
+        }
+    }
+
+    /// `Effect.gen(…).pipe(…)`: a step that provides would hide requirements.
+    fn piped_ctor(&self, cx: &HookCx<'_>, m: &StaticMemberExpression<'_>, c: &CallExpression<'_>) -> Ctor {
+        let provides = args(c).iter().any(|st| self.sym(cx, step_callee(st)).is_none_or(|n| n.contains("provide")));
+        if provides {
+            Ctor::Opaque
+        } else {
+            self.ctor_of(cx, &m.object)
         }
     }
 
@@ -351,53 +369,55 @@ impl<'i> Hook<'i> {
     fn layer_call_at(&mut self, cx: &HookCx<'_>, c: &CallExpression<'_>, operand: bool) -> Option<u32> {
         let a = args(c);
         // `X.pipe(…)` and `pipe(X, …)`.
-        if let Expression::StaticMemberExpression(m) = c.callee.get_inner_expression() {
-            if m.property.name == "pipe" {
-                return self.layer_pipe(cx, &m.object, &a);
-            }
+        if let Some(m) = pipe_member(c) {
+            return self.layer_pipe(cx, &m.object, &a);
         }
         let callee_sym = self.sym(cx, &c.callee);
-        if matches!(callee_sym.as_deref(), Some("effect#pipe") | Some("effect#Function.pipe")) {
+        if is_pipe_fn(callee_sym.as_deref()) {
             return a.split_first().and_then(|(o, steps)| self.layer_pipe(cx, o, steps));
         }
-        // `Layer.effect(Tag)(eff)`.
         if let Expression::CallExpression(inner) = c.callee.get_inner_expression() {
-            let ia = args(inner);
-            if let (Some(name), [tag], [eff]) = (self.layer_name(cx, &inner.callee), ia.as_slice(), a.as_slice()) {
-                if let Some(takes_effect) = builder(&name) {
-                    return Some(self.built(cx, tag, takes_effect.then_some(*eff)));
-                }
-            }
-            return None;
+            return self.curried_builder(cx, inner, &a);
         }
         let name = callee_sym.as_deref().and_then(|s| sym_rest(s, "effect#Layer."))?.to_string();
-        if let Some(takes_effect) = builder(&name) {
-            return match a.as_slice() {
+        self.layer_fn(cx, &name, &a, operand)
+    }
+
+    /// `Layer.effect(Tag)(eff)`.
+    fn curried_builder(&mut self, cx: &HookCx<'_>, inner: &CallExpression<'_>, a: &[&Expression<'_>]) -> Option<u32> {
+        let takes_effect = builder(&self.layer_name(cx, &inner.callee)?)?;
+        match (args(inner).as_slice(), a) {
+            ([tag], [eff]) => Some(self.built(cx, tag, takes_effect.then_some(*eff))),
+            _ => None,
+        }
+    }
+
+    /// A call of `Layer.<name>` with arguments `a`.
+    fn layer_fn(&mut self, cx: &HookCx<'_>, name: &str, a: &[&Expression<'_>], operand: bool) -> Option<u32> {
+        if let Some(takes_effect) = builder(name) {
+            return match a {
                 [tag, eff, ..] => Some(self.built(cx, tag, takes_effect.then_some(*eff))),
                 _ => None,
             };
         }
-        if let Some(mode) = compose(&name) {
-            if name != "mergeAll" && a.len() < 2 {
-                return None;
-            }
-            let mut parts = Vec::new();
-            for x in a {
-                for o in self.operands(cx, x) {
-                    parts.push((o, mode));
-                }
-            }
-            return Some(self.node(Node { builds: Vec::new(), ctor: Ctor::Nothing, parts, opaque: false, at: 0 }));
+        if let Some(mode) = compose(name) {
+            return (name == "mergeAll" || a.len() >= 2).then(|| self.composed(cx, a, mode));
         }
-        if matches!(name.as_str(), "effectDiscard" | "scopedDiscard") {
+        if matches!(name, "effectDiscard" | "scopedDiscard") {
             let ctor = a.first().map_or(Ctor::Opaque, |e| self.ctor_of(cx, e));
             return Some(self.node(Node { builds: Vec::new(), ctor, parts: Vec::new(), opaque: false, at: 0 }));
         }
-        if transparent(&name) || !operand {
-            return None;
-        }
         // `Layer.unwrap…`, `Layer.effectContext` and the rest: what they build is computed.
-        Some(self.opaque())
+        (operand && !transparent(name)).then(|| self.opaque())
+    }
+
+    /// A composition of every operand of `xs` in one mode.
+    fn composed(&mut self, cx: &HookCx<'_>, xs: &[&Expression<'_>], mode: u8) -> u32 {
+        let mut parts = Vec::new();
+        for x in xs {
+            parts.extend(self.operands(cx, x).into_iter().map(|o| (o, mode)));
+        }
+        self.node(Node { builds: Vec::new(), ctor: Ctor::Nothing, parts, opaque: false, at: 0 })
     }
 
     fn built(&mut self, cx: &HookCx<'_>, tag: &Expression<'_>, eff: Option<&Expression<'_>>) -> u32 {
@@ -409,52 +429,43 @@ impl<'i> Hook<'i> {
 
     /// A pipe is a layer pipe when one of its steps is a `Layer` function.
     fn layer_pipe(&mut self, cx: &HookCx<'_>, obj: &Expression<'_>, steps: &[&Expression<'_>]) -> Option<u32> {
-        let step_name = |h: &Self, s: &Expression<'_>| match s.get_inner_expression() {
-            Expression::CallExpression(sc) => h.layer_name(cx, &sc.callee),
-            other => h.layer_name(cx, other),
-        };
-        if !steps.iter().any(|s| step_name(self, s).is_some()) {
+        if !steps.iter().any(|st| self.layer_name(cx, step_callee(st)).is_some()) {
             return None;
         }
         let mut cur: Option<Operand> = None;
-        for (i, s) in steps.iter().enumerate() {
-            let name = step_name(self, s);
-            let call = match s.get_inner_expression() {
-                Expression::CallExpression(sc) => Some(sc),
-                _ => None,
-            };
-            let sargs = call.map(|sc| args(sc)).unwrap_or_default();
-            match (name.as_deref(), sargs.as_slice()) {
-                (Some(n), [tag]) if i == 0 && builder(n).is_some() => {
-                    let takes_effect = builder(n) == Some(true);
-                    cur = Some(Operand::Node(self.built(cx, tag, takes_effect.then_some(obj))));
-                }
-                (Some(n), [that]) if compose(n).is_some() => {
-                    let mode = compose(n).unwrap();
-                    let this = match cur.take() {
-                        Some(o) => o,
-                        None => self.operand(cx, obj),
-                    };
-                    let mut parts = vec![(this, mode)];
-                    for o in self.operands(cx, that) {
-                        parts.push((o, mode));
-                    }
-                    cur = Some(Operand::Node(self.node(Node { builds: Vec::new(), ctor: Ctor::Nothing, parts, opaque: false, at: 0 })));
-                }
-                (Some(n), _) if transparent(n) => {
-                    if cur.is_none() {
-                        cur = Some(self.operand(cx, obj));
-                    }
-                }
-                _ => cur = Some(Operand::Node(self.opaque())),
-            }
-            if let Some(sc) = call {
+        for (i, st) in steps.iter().enumerate() {
+            cur = Some(self.pipe_step(cx, obj, cur, i == 0, st));
+            if let Expression::CallExpression(sc) = st.get_inner_expression() {
                 self.seen.insert((sc.span.start, sc.span.end), None);
             }
         }
         match cur {
             Some(Operand::Node(n)) => Some(n),
             _ => None,
+        }
+    }
+
+    /// One step of a layer pipe over `obj`, given the layer so far (`None` before any step).
+    fn pipe_step(&mut self, cx: &HookCx<'_>, obj: &Expression<'_>, cur: Option<Operand>, first: bool, st: &Expression<'_>) -> Operand {
+        let name = self.layer_name(cx, step_callee(st));
+        let sargs = match st.get_inner_expression() {
+            Expression::CallExpression(sc) => args(sc),
+            _ => Vec::new(),
+        };
+        match (name.as_deref(), sargs.as_slice()) {
+            (Some(n), [tag]) if first && builder(n).is_some() => {
+                let takes_effect = builder(n) == Some(true);
+                Operand::Node(self.built(cx, tag, takes_effect.then_some(obj)))
+            }
+            (Some(n), [that]) if compose(n).is_some() => {
+                let mode = compose(n).unwrap_or(1);
+                let this = cur.unwrap_or_else(|| self.operand(cx, obj));
+                let mut parts = vec![(this, mode)];
+                parts.extend(self.operands(cx, that).into_iter().map(|o| (o, mode)));
+                Operand::Node(self.node(Node { builds: Vec::new(), ctor: Ctor::Nothing, parts, opaque: false, at: 0 }))
+            }
+            (Some(n), _) if transparent(n) => cur.unwrap_or_else(|| self.operand(cx, obj)),
+            _ => Operand::Node(self.opaque()),
         }
     }
 
@@ -516,38 +527,32 @@ impl<'i> Hook<'i> {
     fn roots_at(&mut self, cx: &HookCx<'_>, c: &CallExpression<'_>) {
         self.at = c.span.start;
         let a = args(c);
-        match self.sym(cx, &c.callee).as_deref() {
-            Some("effect#Layer.launch") | Some("effect#ManagedRuntime.make") => {
-                if let Some(l) = a.first() {
-                    let ls = self.operands(cx, l);
-                    self.root(cx, ls);
-                }
-                return;
-            }
-            _ => {}
-        }
-        // `Effect.runPromise(eff)` (any runtime-escape symbol).
-        if self.runs(cx, &c.callee) {
+        let launch = matches!(self.sym(cx, &c.callee).as_deref(), Some("effect#Layer.launch") | Some("effect#ManagedRuntime.make"));
+        let ls = if launch {
+            a.first().map(|l| self.operands(cx, l)).unwrap_or_default()
+        } else if self.runs(cx, &c.callee) {
+            // `Effect.runPromise(eff)` (any runtime-escape symbol).
+            let mut ls = Vec::new();
             if let Some(eff) = a.first() {
-                let mut ls = Vec::new();
                 self.provides(cx, eff, &mut ls);
-                self.root(cx, ls);
             }
-            return;
+            ls
+        } else {
+            self.piped_root(cx, c, &a)
+        };
+        self.root(cx, ls);
+    }
+
+    /// `eff.pipe(…, Effect.provide(L), Effect.runPromise)`: the layers provided before the run.
+    fn piped_root(&mut self, cx: &HookCx<'_>, c: &CallExpression<'_>, a: &[&Expression<'_>]) -> Vec<Operand> {
+        let mut ls = Vec::new();
+        let Some(m) = pipe_member(c) else { return ls };
+        let Some(k) = a.iter().position(|st| self.runs(cx, st)) else { return ls };
+        self.provides(cx, &m.object, &mut ls);
+        for st in &a[..k] {
+            self.provide_step(cx, st, &mut ls);
         }
-        // `eff.pipe(…, Effect.provide(L), Effect.runPromise)`.
-        if let Expression::StaticMemberExpression(m) = c.callee.get_inner_expression() {
-            if m.property.name == "pipe" {
-                if let Some(k) = a.iter().position(|s| self.runs(cx, s)) {
-                    let mut ls = Vec::new();
-                    self.provides(cx, &m.object, &mut ls);
-                    for s in &a[..k] {
-                        self.provide_step(cx, s, &mut ls);
-                    }
-                    self.root(cx, ls);
-                }
-            }
-        }
+        ls
     }
 
     fn bind(&mut self, name: String, b: Bind) {
@@ -874,137 +879,176 @@ impl Linker<'_> {
     }
 }
 
-/// Resolve every file's names and number services, layers and roots. `resolve(rel, spec)` is the
-/// TS lane's import resolution, giving an index into `files`.
-pub fn link(files: &[LinkFile<'_>], ext: &External, resolve: &dyn Fn(&str, &str) -> Option<usize>) -> Rows {
-    let lk = Linker { files, ext, resolve };
-    let mut svcs: BTreeMap<SvcKey, (u32, u32)> = BTreeMap::new();
-    for f in files {
-        for d in f.graph.iter().flat_map(|g| &g.services) {
-            svcs.entry(SvcKey::Repo(d.key.clone())).or_insert((f.id, d.kind as u32));
+/// The linked graph, with services and layers named by key, before numbering.
+#[derive(Default)]
+struct Keyed {
+    svcs: BTreeMap<SvcKey, (u32, u32)>,
+    layers: BTreeSet<LayerKey>,
+    ly: Vec<(LayerKey, u32, SvcKey)>,
+    lp: Vec<(LayerKey, LayerKey, u32)>,
+    lc: Vec<(LayerKey, FnAt)>,
+    lo: Vec<LayerKey>,
+    us: Vec<(FnAt, SvcKey)>,
+    roots: Vec<(u32, Option<FnAt>, Vec<LayerKey>)>,
+}
+
+impl Keyed {
+    /// A service key, registering a catalog service the first time it is named.
+    fn svc(&mut self, ext: &External, k: SvcKey) -> SvcKey {
+        if let SvcKey::Ext(s) = &k {
+            self.svcs.entry(k.clone()).or_insert((NONE, ext.services[s] as u32));
         }
+        k
     }
-    let mut layers: BTreeSet<LayerKey> = BTreeSet::new();
-    let mut ly: Vec<(LayerKey, u32, SvcKey)> = Vec::new();
-    let mut lp: Vec<(LayerKey, LayerKey, u32)> = Vec::new();
-    let mut lc: Vec<(LayerKey, FnAt)> = Vec::new();
-    let mut lo: Vec<LayerKey> = Vec::new();
-    let mut us: Vec<(FnAt, SvcKey)> = Vec::new();
-    let mut roots: Vec<(u32, Option<FnAt>, Vec<LayerKey>)> = Vec::new();
-    let ext_svc = |svcs: &mut BTreeMap<SvcKey, (u32, u32)>, k: &SvcKey| {
-        if let SvcKey::Ext(s) = k {
-            svcs.entry(k.clone()).or_insert((NONE, ext.services[s] as u32));
-        }
-    };
-    for (i, f) in files.iter().enumerate() {
-        let Some(g) = f.graph else { continue };
+
+    fn file(&mut self, lk: &Linker<'_>, i: usize, g: &FileGraph) {
+        let id = lk.files[i].id;
         for (n, node) in g.nodes.iter().enumerate() {
-            let me = LayerKey::Repo(i, n as u32);
-            layers.insert(me.clone());
-            let mut opaque = node.opaque;
-            for b in &node.builds {
-                match lk.svc(i, b, DEPTH) {
-                    Some(k) => {
-                        ext_svc(&mut svcs, &k);
-                        ly.push((me.clone(), f.id, k));
-                    }
-                    None => opaque = true,
-                }
-            }
-            match lk.ctor(i, &node.ctor, DEPTH) {
-                Ok(Some(fa)) => lc.push((me.clone(), fa)),
-                Ok(None) => {}
-                Err(()) => opaque = true,
-            }
-            for (o, mode) in &node.parts {
-                let inner = lk.layer(i, o, DEPTH);
-                layers.insert(inner.clone());
-                lp.push((me.clone(), inner, *mode as u32));
-            }
-            if opaque {
-                lo.push(me);
-            }
+            self.node(lk, i, n as u32, node);
         }
         for (fl, r) in &g.uses {
             if let Some(k) = lk.svc(i, r, DEPTH) {
-                ext_svc(&mut svcs, &k);
-                us.push(((f.id, *fl), k));
+                let k = self.svc(lk.ext, k);
+                self.us.push(((id, *fl), k));
             }
         }
         for root in &g.roots {
             let ls: Vec<LayerKey> = root.layers.iter().map(|o| lk.layer(i, o, DEPTH)).collect();
-            layers.extend(ls.iter().cloned());
-            roots.push((f.id, root.fn_local.map(|l| (f.id, l)), ls));
+            self.layers.extend(ls.iter().cloned());
+            self.roots.push((id, root.fn_local.map(|l| (id, l)), ls));
         }
     }
-    // Catalog layers build their listed services; unresolved names are opaque.
-    for l in layers.clone() {
-        match &l {
-            LayerKey::Cat(s) => {
-                for b in &ext.layers[s] {
-                    let k = SvcKey::Ext(b.clone());
-                    if ext.services.contains_key(b) {
-                        ext_svc(&mut svcs, &k);
-                        ly.push((l.clone(), NONE, k));
-                    } else {
-                        lo.push(l.clone());
-                    }
+
+    fn node(&mut self, lk: &Linker<'_>, i: usize, n: u32, node: &Node) {
+        let me = LayerKey::Repo(i, n);
+        self.layers.insert(me.clone());
+        let mut opaque = node.opaque;
+        for b in &node.builds {
+            match lk.svc(i, b, DEPTH) {
+                Some(k) => {
+                    let k = self.svc(lk.ext, k);
+                    self.ly.push((me.clone(), lk.files[i].id, k));
                 }
+                None => opaque = true,
             }
-            LayerKey::Unresolved(..) => lo.push(l.clone()),
-            LayerKey::Repo(..) => {}
+        }
+        match lk.ctor(i, &node.ctor, DEPTH) {
+            Ok(Some(fa)) => self.lc.push((me.clone(), fa)),
+            Ok(None) => {}
+            Err(()) => opaque = true,
+        }
+        for (o, mode) in &node.parts {
+            let inner = lk.layer(i, o, DEPTH);
+            self.layers.insert(inner.clone());
+            self.lp.push((me.clone(), inner, *mode as u32));
+        }
+        if opaque {
+            self.lo.push(me);
         }
     }
-    let layer_names: Vec<Named> = layers
-        .iter()
-        .map(|k| match k {
-            LayerKey::Repo(i, n) => {
-                let g = files[*i].graph.unwrap();
-                let name = g.binds.iter().find(|(_, b)| matches!(b, Bind::Node(m) if m == n)).map_or("-".to_string(), |(x, _)| x.clone());
-                Named { file: files[*i].id, line: g.nodes[*n as usize].at, name }
+
+    /// Catalog layers build their listed services; unresolved names are opaque.
+    fn leaves(&mut self, ext: &External) {
+        for l in self.layers.clone() {
+            match &l {
+                LayerKey::Cat(s) => self.catalog_layer(ext, &l, s),
+                LayerKey::Unresolved(..) => self.lo.push(l.clone()),
+                LayerKey::Repo(..) => {}
             }
-            LayerKey::Cat(s) => Named { file: NONE, line: 0, name: s.clone() },
-            LayerKey::Unresolved(i, Ref::Local(r) | Ref::Sym(r)) => Named { file: files[*i].id, line: 0, name: r.clone() },
-        })
-        .collect();
-    let lid: BTreeMap<LayerKey, u32> = layers.into_iter().enumerate().map(|(n, k)| (k, n as u32)).collect();
-    let sid: BTreeMap<SvcKey, u32> = svcs.keys().enumerate().map(|(n, k)| (k.clone(), n as u32)).collect();
-    let mut rows = Rows { nl: lid.len() as u32, ns: sid.len() as u32, nr: roots.len() as u32, ..Rows::default() };
-    rows.sv = svcs.iter().map(|(k, (file, kind))| [sid[k], *file, *kind]).collect();
-    rows.layer_names = layer_names;
-    rows.svc_names = svcs
-        .iter()
-        .map(|(k, (file, _))| match k {
-            SvcKey::Ext(s) => Named { file: NONE, line: 0, name: s.clone() },
-            SvcKey::Repo(key) => {
-                let d = files
-                    .iter()
-                    .filter(|f| f.id == *file)
-                    .flat_map(|f| f.graph.iter().flat_map(|g| &g.services))
-                    .find(|d| &d.key == key);
-                let (line, name) = d.map_or((0, key.clone()), |d| (d.at, format!("{} ({key})", d.name)));
-                Named { file: *file, line, name }
+        }
+    }
+
+    fn catalog_layer(&mut self, ext: &External, l: &LayerKey, sym: &str) {
+        for b in &ext.layers[sym] {
+            if ext.services.contains_key(b) {
+                let k = self.svc(ext, SvcKey::Ext(b.clone()));
+                self.ly.push((l.clone(), NONE, k));
+            } else {
+                self.lo.push(l.clone());
             }
-        })
-        .collect();
-    rows.ly = ly.iter().map(|(l, f, s)| [lid[l], *f, sid[s]]).collect();
-    rows.lp = lp.iter().filter(|(a, b, _)| a != b).map(|(a, b, m)| [lid[a], lid[b], *m]).collect();
-    rows.lc = lc.iter().map(|(l, fa)| (lid[l], *fa)).collect();
-    rows.lo = lo.iter().map(|l| lid[l]).collect();
-    rows.us = us.iter().map(|(fa, s)| (*fa, sid[s])).collect();
-    // A layer requires what its constructor yields.
-    let by_fn: BTreeMap<FnAt, Vec<u32>> = rows.us.iter().fold(BTreeMap::new(), |mut m, (fa, s)| {
-        m.entry(*fa).or_insert_with(Vec::new).push(*s);
-        m
-    });
-    // A decorator (a layer whose constructor yields a service it also builds, given the base
-    // layer with `Layer.provide`) is transparent for that service: it neither builds nor
-    // requires it, since the service comes from the layer below. Emitting both would make the
-    // decorator a one-layer cycle, and a duplicate builder beside its base.
+        }
+    }
+}
+
+/// Resolve every file's names and number services, layers and roots. `resolve(rel, spec)` is the
+/// TS lane's import resolution, giving an index into `files`.
+pub fn link(files: &[LinkFile<'_>], ext: &External, resolve: &dyn Fn(&str, &str) -> Option<usize>) -> Rows {
+    let lk = Linker { files, ext, resolve };
+    let mut k = Keyed::default();
+    for f in files {
+        for d in f.graph.iter().flat_map(|g| &g.services) {
+            k.svcs.entry(SvcKey::Repo(d.key.clone())).or_insert((f.id, d.kind as u32));
+        }
+    }
+    for (i, f) in files.iter().enumerate() {
+        if let Some(g) = f.graph {
+            k.file(&lk, i, g);
+        }
+    }
+    k.leaves(ext);
+    let mut rows = number(&k, files);
+    requirements(&mut rows);
+    sort_rows(&mut rows);
+    rows
+}
+
+/// Dense ids: layers and services in key order, roots in file order.
+fn number(k: &Keyed, files: &[LinkFile<'_>]) -> Rows {
+    let lid: BTreeMap<&LayerKey, u32> = k.layers.iter().enumerate().map(|(n, l)| (l, n as u32)).collect();
+    let sid: BTreeMap<&SvcKey, u32> = k.svcs.keys().enumerate().map(|(n, s)| (s, n as u32)).collect();
+    let mut rows = Rows { nl: lid.len() as u32, ns: sid.len() as u32, nr: k.roots.len() as u32, ..Rows::default() };
+    rows.sv = k.svcs.iter().map(|(s, (file, kind))| [sid[s], *file, *kind]).collect();
+    rows.ly = k.ly.iter().map(|(l, f, s)| [lid[l], *f, sid[s]]).collect();
+    rows.lp = k.lp.iter().filter(|(a, b, _)| a != b).map(|(a, b, m)| [lid[a], lid[b], *m]).collect();
+    rows.lc = k.lc.iter().map(|(l, fa)| (lid[l], *fa)).collect();
+    rows.lo = k.lo.iter().map(|l| lid[l]).collect();
+    rows.us = k.us.iter().map(|(fa, s)| (*fa, sid[s])).collect();
+    for (r, (file, fa, ls)) in k.roots.iter().enumerate() {
+        rows.rt.push((r as u32, *file, *fa));
+        rows.lr.extend(ls.iter().map(|l| [r as u32, lid[l]]));
+    }
+    rows.layer_names = k.layers.iter().map(|l| layer_name(l, files)).collect();
+    rows.svc_names = k.svcs.iter().map(|(s, (file, _))| svc_name(s, *file, files)).collect();
+    rows
+}
+
+fn layer_name(k: &LayerKey, files: &[LinkFile<'_>]) -> Named {
+    match k {
+        LayerKey::Repo(i, n) => {
+            let g = files[*i].graph.unwrap();
+            let bound = g.binds.iter().find(|(_, b)| matches!(b, Bind::Node(m) if m == n));
+            Named { file: files[*i].id, line: g.nodes[*n as usize].at, name: bound.map_or("-".to_string(), |(x, _)| x.clone()) }
+        }
+        LayerKey::Cat(s) => Named { file: NONE, line: 0, name: s.clone() },
+        LayerKey::Unresolved(i, Ref::Local(r) | Ref::Sym(r)) => Named { file: files[*i].id, line: 0, name: r.clone() },
+    }
+}
+
+fn svc_name(k: &SvcKey, file: u32, files: &[LinkFile<'_>]) -> Named {
+    let key = match k {
+        SvcKey::Ext(s) => return Named { file: NONE, line: 0, name: s.clone() },
+        SvcKey::Repo(key) => key,
+    };
+    let def = files.iter().filter(|f| f.id == file).flat_map(|f| f.graph.iter().flat_map(|g| &g.services)).find(|d| &d.key == key);
+    let (line, name) = def.map_or((0, key.clone()), |d| (d.at, format!("{} ({key})", d.name)));
+    Named { file, line, name }
+}
+
+/// A layer requires what its constructor yields. A decorator (a layer whose constructor yields a
+/// service it also builds, given the base layer with `Layer.provide`) is transparent for that
+/// service: it neither builds nor requires it, since the service comes from the layer below.
+/// Emitting both would make the decorator a one-layer cycle, and a duplicate builder beside its
+/// base.
+fn requirements(rows: &mut Rows) {
+    let mut by_fn: BTreeMap<FnAt, Vec<u32>> = BTreeMap::new();
+    for (fa, s) in &rows.us {
+        by_fn.entry(*fa).or_default().push(*s);
+    }
+    let builds: BTreeSet<[u32; 2]> = rows.ly.iter().map(|r| [r[0], r[2]]).collect();
     let mut decorated: BTreeSet<[u32; 2]> = BTreeSet::new();
     for (l, fa) in &rows.lc {
         for s in by_fn.get(fa).into_iter().flatten() {
-            if rows.ly.iter().any(|r| r[0] == *l && r[2] == *s) {
+            if builds.contains(&[*l, *s]) {
                 decorated.insert([*l, *s]);
             } else {
                 rows.lq.push([*l, *s]);
@@ -1012,27 +1056,20 @@ pub fn link(files: &[LinkFile<'_>], ext: &External, resolve: &dyn Fn(&str, &str)
         }
     }
     rows.ly.retain(|r| !decorated.contains(&[r[0], r[2]]));
-    for (r, (file, fa, ls)) in roots.iter().enumerate() {
-        rows.rt.push((r as u32, *file, *fa));
-        for l in ls {
-            rows.lr.push([r as u32, lid[l]]);
-        }
+}
+
+fn sort_rows(rows: &mut Rows) {
+    fn canon<T: Ord>(v: &mut Vec<T>) {
+        v.sort_unstable();
+        v.dedup();
     }
-    rows.ly.sort_unstable();
-    rows.ly.dedup();
-    rows.lq.sort_unstable();
-    rows.lq.dedup();
-    rows.lp.sort_unstable();
-    rows.lp.dedup();
-    rows.lr.sort_unstable();
-    rows.lr.dedup();
-    rows.lc.sort_unstable();
-    rows.lc.dedup();
-    rows.lo.sort_unstable();
-    rows.lo.dedup();
-    rows.us.sort_unstable();
-    rows.us.dedup();
-    rows
+    canon(&mut rows.ly);
+    canon(&mut rows.lq);
+    canon(&mut rows.lp);
+    canon(&mut rows.lr);
+    canon(&mut rows.lc);
+    canon(&mut rows.lo);
+    canon(&mut rows.us);
 }
 
 impl Rows {
