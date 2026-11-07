@@ -7,10 +7,14 @@
 # holding other seats' hunks), commit a blob you built yourself instead of the
 # working-tree file:
 #
-#   ... -- --blob <repo-path>=<file-with-HEAD-plus-only-your-hunks> [more...]
+#   ... -- --base <sha> --blob <repo-path>=<file> [--blob ...]
 #
-# Build that file from `git show HEAD:<repo-path>` plus your change. Plain
-# paths and --blob entries can be mixed. The working tree is not touched.
+# Build <file> from `git show <sha>:<repo-path>` plus only your change, and
+# pass that same <sha> as --base (required with --blob). At commit time your
+# change is replayed onto main's current version of the file with a three-way
+# merge (base = <sha>'s version), so anything committed to that file since
+# <sha> is kept. A conflict aborts with nothing written. Plain paths and
+# --blob entries can be mixed. The working tree is not touched.
 #
 # - Builds the commit in a private index (.git/index.<seat>) from HEAD,
 #   with only <paths> taken from the working tree. Other seats' staged or
@@ -34,8 +38,13 @@ msg=$2
 shift 3
 paths=()
 blobs=()
+base=""
 while [ $# -gt 0 ]; do
-  if [ "$1" = "--blob" ]; then
+  if [ "$1" = "--base" ]; then
+    [ $# -ge 2 ] || { echo "commit.sh: --base needs a sha" >&2; exit 2; }
+    base=$2
+    shift 2
+  elif [ "$1" = "--blob" ]; then
     [ $# -ge 2 ] && [[ "$2" == *=* ]] || { echo "commit.sh: --blob needs <repo-path>=<file>" >&2; exit 2; }
     src=${2#*=}
     [ -f "$src" ] || { echo "commit.sh: blob source $src not found" >&2; exit 2; }
@@ -48,6 +57,12 @@ while [ $# -gt 0 ]; do
 done
 
 cd "$(git rev-parse --show-toplevel)"
+if [ -n "${blobs[*]+x}" ]; then
+  [ -n "$base" ] || { echo "commit.sh: --blob needs --base <sha> (the commit you built the blob from)" >&2; exit 2; }
+  base=$(git rev-parse --verify -q "$base^{commit}") || { echo "commit.sh: --base is not a commit" >&2; exit 2; }
+fi
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
 idx="$(git rev-parse --absolute-git-dir)/index.$seat"
 branch=$(git symbolic-ref -q HEAD || true)
 if [ "$branch" != "refs/heads/main" ]; then
@@ -61,7 +76,20 @@ for try in 1 2 3 4 5 6 7 8; do
   if [ -n "${paths[*]+x}" ]; then GIT_INDEX_FILE=$idx git add -A -- "${paths[@]}"; fi
   for b in ${blobs[@]+"${blobs[@]}"}; do
     rp=${b%%=*}
-    sha=$(git hash-object -w -- "${b#*=}")
+    mine=${b#*=}
+    git show "$base:$rp" > "$tmp/base" 2>/dev/null || : > "$tmp/base"
+    git show "$old:$rp" > "$tmp/cur" 2>/dev/null || : > "$tmp/cur"
+    if cmp -s "$tmp/base" "$tmp/cur"; then
+      sha=$(git hash-object -w -- "$mine")
+    else
+      cp "$tmp/cur" "$tmp/merged"
+      if ! git merge-file -q "$tmp/merged" "$tmp/base" "$mine"; then
+        echo "commit.sh: $rp changed on main since --base and your change conflicts with it; rebuild your blob from HEAD" >&2
+        exit 1
+      fi
+      echo "commit.sh: $rp moved since --base; replayed your change onto main's version" >&2
+      sha=$(git hash-object -w -- "$tmp/merged")
+    fi
     mode=$(git ls-tree "$old" -- "$rp" | awk '{print $1}')
     GIT_INDEX_FILE=$idx git update-index --add --cacheinfo "${mode:-100644},$sha,$rp"
   done
