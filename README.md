@@ -4,7 +4,7 @@ Pulsar tells a team of peer agents what a change did to the health of the code. 
 
 It is built to run on every sha, beside many agents. A Rust CLI reads the code into compact facts, and a formally verified engine written in Bend decides what is a finding. *Each finding Pulsar reports is checked by a formally verified engine, given the facts it read.* What that does and does not cover is in [`experiments/bend-pulsar/research/verification-status.md`](experiments/bend-pulsar/research/verification-status.md).
 
-Works on TypeScript (including Effect and Cloudflare Workers code), Rust, Bend and SQL files. macOS and Linux, arm64 and x64. Windows is not supported (use WSL). What changed since 0.3.0 is in [`CHANGELOG.md`](CHANGELOG.md).
+Works on TypeScript (including Effect and Cloudflare Workers code), Rust, Bend and SQL files. The npm package ships for macOS on arm64 and Linux on x64; other macOS and Linux targets build from a checkout. Windows is not supported (use WSL). What changed since 0.3.0 is in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Install
 
@@ -126,7 +126,7 @@ One policy per repo, committed in `.pulsar/`, and its fingerprint is printed wit
 - **Effect scope takes path prefixes, not globs.** `[packs.effect] effect_only` and `boundary` match like the lane scopes: a prefix ending in `/` is a directory, anything else is that file.
 - **`.then`, `.catch` and `.finally` on an imported binding are deliberately not flagged as promise style**, to keep `Effect.catch`-style APIs out.
 - **Constructs at module level, outside any function, are not yet sites** for the Effect style rules (fixed in 0.4.1).
-- **Thresholds are conventions.** `core.cyclomatic` flags above 10, `core.nesting` above 3, `core.npath` above 200. The evidence for each is in [`experiments/bend-pulsar/research/thresholds.md`](experiments/bend-pulsar/research/thresholds.md) and is weaker than the numbers look. Change them in policy, not in your head.
+- **Thresholds are conventions.** `core.cyclomatic` flags above 10, `core.nesting` above 3, `core.npath` above 200. The evidence for each is in [`experiments/bend-pulsar/research/thresholds.md`](experiments/bend-pulsar/research/thresholds.md) and is weaker than the numbers look. In 0.4.0 they are fixed in the engine's rules, not set by policy; `pulsar explain <rule>` prints each one.
 - **Not a score.** Pulsar does not rank repos, rate agents or blend signals.
 
 More: [`experiments/bend-pulsar/PRODUCT.md`](experiments/bend-pulsar/PRODUCT.md) (scope), [`experiments/bend-pulsar/FACTS.md`](experiments/bend-pulsar/FACTS.md) (the fact format and every rule's facts).
