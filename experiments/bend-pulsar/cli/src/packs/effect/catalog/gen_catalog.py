@@ -12,6 +12,7 @@ Sources are local checkouts on the dev machine (see SRC); the outputs are commit
 """
 import os
 import re
+import subprocess
 import sys
 
 HOME = os.path.expanduser("~")
@@ -20,6 +21,8 @@ SRC = {
     "ED": (f"{HOME}/playground/effect", "effect@9428e17499:"),
     "E4": (f"{HOME}/playground/effect/packages/effect/src", "effect@9428e17499:packages/effect/src/"),
     "PG4": (f"{HOME}/playground/effect/packages/sql/pg/src", "effect@9428e17499:packages/sql/pg/src/"),
+    "DO4": (f"{HOME}/playground/effect/packages/sql/sqlite-do/src", "effect@9428e17499:packages/sql/sqlite-do/src/"),
+    "D14": (f"{HOME}/playground/effect/packages/sql/d1/src", "effect@9428e17499:packages/sql/d1/src/"),
     "PN4": (f"{HOME}/playground/effect/packages/platform/node/src", "effect@9428e17499:packages/platform/node/src/"),
     "PB4": (f"{HOME}/playground/effect/packages/platform/bun/src", "effect@9428e17499:packages/platform/bun/src/"),
     "PD4": (f"{HOME}/playground/effect/packages/platform/deno/src", "effect@9428e17499:packages/platform/deno/src/"),
@@ -265,6 +268,11 @@ for ver, src, base in [("4", "E4", "effect/sql#"), ("3", "S3", "@effect/sql#")]:
     add("query", f"{base}SqlClient.SqlClient", ver, src, sq, "SqlClient", via="yield", use="member:unsafe")
 add("query", "@effect/sql-pg#PgClient.PgClient", "4", "PG4", "PgClient.ts", "PgClient", via="yield", use="tag")
 add("query", "@effect/sql-pg#PgClient.PgClient", "4", "PG4", "PgClient.ts", "PgClient", via="yield", use="member:unsafe")
+# SQLite in a Durable Object and Cloudflare D1: each client service is also a SqlClient.
+for sym, src, file, export in [("@effect/sql-sqlite-do#SqliteClient.SqliteClient", "DO4", "SqliteClient.ts", "SqliteClient"),
+                               ("@effect/sql-d1#D1Client.D1Client", "D14", "D1Client.ts", "D1Client")]:
+    add("query", sym, "4", src, file, export, via="yield", use="tag")
+    add("query", sym, "4", src, file, export, via="yield", use="member:unsafe")
 for n in ["findAll", "findNonEmpty", "findOne", "findOneOption", "void"]:
     add("query", f"effect/sql#SqlSchema.{n}", "4", "E4", "sql/SqlSchema.ts", n, via="result", use="call")
 for n in ["findAll", "findOne", "single", "void"]:
@@ -318,6 +326,8 @@ for sym, src, file, export in [
     ("effect/sql#SqlClient.SqlClient", "E4", "sql/SqlClient.ts", "SqlClient"),
     ("@effect/sql#SqlClient.SqlClient", "S3", "SqlClient.ts", "SqlClient"),
     ("@effect/sql-pg#PgClient.PgClient", "PG4", "PgClient.ts", "PgClient"),
+    ("@effect/sql-sqlite-do#SqliteClient.SqliteClient", "DO4", "SqliteClient.ts", "SqliteClient"),
+    ("@effect/sql-d1#D1Client.D1Client", "D14", "D1Client.ts", "D1Client"),
     ("effect#FileSystem.FileSystem", "E4", "FileSystem.ts", "FileSystem"),
     ("effect#Path.Path", "E4", "Path.ts", "Path"),
     ("effect#Stdio.Stdio", "E4", "Stdio.ts", "Stdio"),
@@ -351,6 +361,11 @@ LAYERS = [
          builds=[("@effect/sql-pg#PgClient.PgClient", "PgClient"), ("effect/sql#SqlClient.SqlClient", "Client.SqlClient")]),
     dict(sym="@effect/sql-pg#PgClient.layerConfig", ver="4", src="PG4", file="PgClient.ts", export="layerConfig",
          builds=[("@effect/sql-pg#PgClient.PgClient", "PgClient"), ("effect/sql#SqlClient.SqlClient", "Client.SqlClient")]),
+] + [
+    dict(sym=f"{mod}#{svc}.{ex}", ver="4", src=src, file=f"{svc}.ts", export=ex,
+         builds=[(f"{mod}#{svc}.{svc}", svc), ("effect/sql#SqlClient.SqlClient", "Client.SqlClient")])
+    for mod, svc, src in [("@effect/sql-sqlite-do", "SqliteClient", "DO4"), ("@effect/sql-d1", "D1Client", "D14")]
+    for ex in ["layer", "layerConfig"]
 ]
 for plat, mod, alias in [("platform-node", "NodeServices", "PN4"), ("platform-bun", "BunServices", "PB4")]:
     LAYERS.append(dict(sym=f"@effect/{plat}#{mod}.layer", ver="4", src=alias, file=f"{mod}.ts", export="layer",
@@ -494,13 +509,18 @@ def header(cid, desc, activate, sources, aliases, scope="pack"):
 def main(out_dir, check=False):
     os.makedirs(out_dir, exist_ok=True)
     eff = header(
-        "effect", "Effect pack catalog: effect (v3 and v4) and @effect/sql, @effect/sql-pg, @effect/platform-*.",
-        ["dep:effect", "dep:@effect/sql", "dep:@effect/sql-pg"],
+        "effect", "Effect pack catalog: effect (v3 and v4) and @effect/sql, @effect/sql-pg, @effect/sql-sqlite-do, @effect/sql-d1, @effect/platform-*.",
+        ["dep:effect", "dep:@effect/sql", "dep:@effect/sql-d1", "dep:@effect/sql-pg", "dep:@effect/sql-sqlite-do"],
         ["effect@9428e17499 (v4, ~/playground/effect)", "effect@3.21.0", "@effect/sql@0.51.1", "@types/node@25.6.0"],
         [("@effect/platform-browser/", "@effect/platform-browser#"), ("@effect/platform-bun/", "@effect/platform-bun#"),
          ("@effect/platform-deno/", "@effect/platform-deno#"), ("@effect/platform-node/", "@effect/platform-node#"),
-         ("@effect/sql-pg/", "@effect/sql-pg#"), ("@effect/sql/", "@effect/sql#"),
-         ("effect/sql/", "effect/sql#"), ("effect/", "effect#")])
+         ("@effect/sql-d1/", "@effect/sql-d1#"), ("@effect/sql-pg/", "@effect/sql-pg#"),
+         ("@effect/sql-sqlite-do/", "@effect/sql-sqlite-do#"), ("@effect/sql/", "@effect/sql#"),
+         # effect 4.0.0 release candidates shipped http, process and sql under effect/unstable/;
+         # 4.1 promoted them. Both spellings name the same symbols.
+         ("effect/http/", "effect/http#"), ("effect/process/", "effect/process#"), ("effect/sql/", "effect/sql#"),
+         ("effect/unstable/http/", "effect/http#"), ("effect/unstable/process/", "effect/process#"),
+         ("effect/unstable/sql/", "effect/sql#"), ("effect/", "effect#")])
     eff.append("symbols = [")
     eff += render_symbols(E)
     eff.append("]")
@@ -627,8 +647,56 @@ def main(out_dir, check=False):
             f.write(text)
 
 
+def drift(ref):
+    """Every v4 name the catalog matches, looked up in the Effect repo as of git `ref` (for example
+    `effect@4.0.0-rc.115`). Prints the names that ref does not declare: an app pinned to it
+    imports them under another name, or not at all."""
+    repo = f"{HOME}/playground/effect"
+    seen, missing, files, moved = set(), [], {}, set()
+
+    def at_ref(root, file):
+        rel = os.path.relpath(f"{root}/{file}", repo)
+        if rel not in files:
+            r = subprocess.run(["git", "-C", repo, "show", f"{ref}:{rel}"], capture_output=True, text=True)
+            files[rel] = r.stdout.split("\n") if r.returncode == 0 else None
+        return rel, files[rel]
+
+    items = [(e["sym"], e["src"], e["file"], e["export"], e.get("member_of")) for e in E + J + P]
+    items += [(h["sym"], h["src"], h["file"], h["export"], None) for h in HANDLERS]
+    items += [(w["sym"], w["src"], w["file"], w["export"], None) for w in WRAPPERS]
+    items += [(x["sym"], x["src"], x["file"], x["export"], None) for x in SERVICES + LAYERS]
+    for sym, src, file, export, member_of in items:
+        root = SRC[src][0]
+        if not root.startswith(repo) or (sym, file, export) in seen:
+            continue
+        seen.add((sym, file, export))
+        rel, ln = at_ref(root, file)
+        if ln is None:
+            # A moved module: the one file with the same name in the same package at that ref.
+            pkg = rel.split("/src/")[0] + "/src/"
+            if pkg not in files:
+                r = subprocess.run(["git", "-C", repo, "ls-tree", "-r", "--name-only", ref, pkg], capture_output=True, text=True)
+                files[pkg] = r.stdout.split()
+            cands = [f for f in files[pkg] if f.endswith("/" + os.path.basename(rel))]
+            if len(cands) != 1:
+                missing.append(f"{sym}: {rel} does not exist at {ref}")
+                continue
+            moved.add(f"{rel} -> {cands[0]}")
+            rel, ln = at_ref(repo, cands[0])
+        elif find_decl(ln, export, member_of) is None:
+            missing.append(f"{sym}: {export} is not declared in {rel} at {ref}")
+    print(f"drift vs {ref}: {len(seen)} v4 names checked, {len(moved)} modules moved, {len(missing)} names not found")
+    for m in sorted(moved):
+        print("  moved " + m)
+    for m in sorted(missing):
+        print("  " + m)
+
+
 if __name__ == "__main__":
     args = sys.argv[1:]
+    if args[:1] == ["--drift"]:
+        drift(args[1])
+        sys.exit(0)
     check = "--check" in args
     args = [a for a in args if a != "--check"]
     main(args[0] if args else os.path.dirname(os.path.abspath(__file__)), check)
