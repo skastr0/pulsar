@@ -41,6 +41,7 @@ pub enum Rel {
     Ie,
     Ib,
     Iu,
+    Bf,
     Cv,
     Im,
     If,
@@ -93,7 +94,7 @@ pub enum Rel {
 }
 
 impl Rel {
-    pub const ALL: [Rel; 77] = [
+    pub const ALL: [Rel; 78] = [
         Rel::N,
         Rel::F,
         Rel::K,
@@ -122,6 +123,7 @@ impl Rel {
         Rel::Ie,
         Rel::Ib,
         Rel::Iu,
+        Rel::Bf,
         Rel::Cv,
         Rel::Im,
         Rel::If,
@@ -203,6 +205,7 @@ impl Rel {
             Rel::Ie => "IE",
             Rel::Ib => "IB",
             Rel::Iu => "IU",
+            Rel::Bf => "BF",
             Rel::Cv => "CV",
             Rel::Im => "IM",
             Rel::If => "IF",
@@ -260,7 +263,7 @@ impl Rel {
         match self {
             Rel::N | Rel::M | Rel::Sy | Rel::Tf | Rel::L | Rel::Lo | Rel::Sr | Rel::Id | Rel::Ru => 1,
             Rel::F | Rel::U | Rel::H | Rel::A | Rel::Cl | Rel::Lq | Rel::Us | Rel::Ln | Rel::If | Rel::Lr | Rel::Lc | Rel::Ds | Rel::Ep
-            | Rel::Ie | Rel::Ib | Rel::Iu | Rel::Rg => 2,
+            | Rel::Ie | Rel::Ib | Rel::Iu | Rel::Bf | Rel::Rg => 2,
             Rel::K | Rel::Fk | Rel::C | Rel::Cfn | Rel::Vn | Rel::Cv | Rel::Hd | Rel::E | Rel::Sv | Rel::Ly | Rel::Lp | Rel::Rt | Rel::Mk | Rel::Lw | Rel::Co | Rel::Cb | Rel::Im | Rel::Cu | Rel::Dt | Rel::Dp | Rel::Di | Rel::Dx | Rel::Df | Rel::Qt | Rel::Bl | Rel::Bw | Rel::Br | Rel::Al | Rel::Rk | Rel::Fc => 3,
             Rel::Fn | Rel::Ct | Rel::Cf | Rel::Rl | Rel::Rf | Rel::Rh | Rel::Cm | Rel::Et | Rel::Dc | Rel::Dg | Rel::Qu | Rel::Qd => 4,
             Rel::I | Rel::Cs | Rel::Bc | Rel::Hr | Rel::Vt | Rel::Re | Rel::Rm => 5,
@@ -443,6 +446,8 @@ pub struct SideTables {
     pub sql_sites: Vec<(u32, u32)>,
     /// `SR` codes of the SQL rules switched on by policy (not a side table: input to the driver).
     pub sql_rules: Vec<u32>,
+    /// `BF` rows `(code, threshold)` of the binding rules switched on (input to the driver).
+    pub binding_rules: Vec<(u32, u32)>,
     /// The fan-out, constant-argument and hot-path rules policy turned on (input to the driver, like
     /// `sql_rules`: it writes their `RF`, `RK` and `RH` rows).
     pub composites: crate::policy::Composites,

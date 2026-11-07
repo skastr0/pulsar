@@ -201,6 +201,15 @@ pub const BUILTIN: &[Entry] = &[
         laws: "engine/Sql-LAWS.bend: sql_drift_t_sound, sql_drift_t_complete, sql_drift_c_sound, sql_drift_c_complete",
         example: "SELECT nickname FROM users   where users has no nickname column",
     },
+    Entry {
+        id: "cloudflare.binding-drift",
+        family: "Cloudflare pack, infra facts",
+        runs: "on with the Cloudflare Workers catalog (or [rules] enable); [rules] disable turns it off",
+        definition: "A binding a deployable declares (wrangler or alchemy config) that no file its entry reaches reads through env.",
+        threshold: "unread bindings per deployable, over 0",
+        laws: "engine/Binding-LAWS.bend: read_sound, read_complete, unread_sound, unread_complete, rule_off",
+        example: "wrangler.toml declares KV SESSIONS; the worker only reads env.DB -> cloudflare.binding-drift on SESSIONS",
+    },
 ];
 
 /// The ctx bit names of FACTS.md (`CS.ctx`), for catalog rule conditions.

@@ -16,6 +16,7 @@
 use crate::cache::{self, Cache};
 use crate::compfind;
 use crate::coverage;
+use crate::infrafind;
 use crate::delta_engine::{self, Rows};
 use crate::driver;
 use crate::engine::{self, Findings};
@@ -292,7 +293,13 @@ fn build_fresh(
 ) -> Result<Built, String> {
     checkout(repo, sha, scratch, tree)?;
     let mut w = FactWriter::new();
-    let mut tables = SideTables { sql_rules: eff.sql_rule_codes(), composites: eff.composites(), untested: eff.untested_on(), ..SideTables::default() };
+    let mut tables = SideTables {
+        sql_rules: eff.sql_rule_codes(),
+        binding_rules: eff.binding_rule_codes(),
+        composites: eff.composites(),
+        untested: eff.untested_on(),
+        ..SideTables::default()
+    };
     let (set, dstats) = driver::build(tree, tracked, &eff.policy.lanes, &eff.active_rules(), &mut w, &mut tables)?;
     let mut coverage_reroot = None;
     if coverage.is_some() || discover {
@@ -652,6 +659,13 @@ fn evaluate(repo: &Path, sha: &str, tag: &str, coverage: Option<&Path>, discover
         let defs = lookup("table definition (DT)", "sql", read_table_defs(&facts_path), &mut degraded);
         let (sql_findings, notices) = sqlfind::findings(s, &tables, &set.files, &defs, disabled)?;
         for f in sql_findings {
+            insert(&mut findings, f, sha)?;
+        }
+        degraded.extend(notices);
+    }
+    if let Some(b) = &found.binding {
+        let (bf, notices) = infrafind::findings(b, &tables)?;
+        for f in bf {
             insert(&mut findings, f, sha)?;
         }
         degraded.extend(notices);

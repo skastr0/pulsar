@@ -110,6 +110,10 @@ pub fn build(
     for code in std::mem::take(&mut tables.sql_rules) {
         w.push(Rel::Sr, &[code]);
     }
+    // Binding rules are on when a pack or policy says so: one BF row per rule, with its threshold.
+    for (code, thr) in std::mem::take(&mut tables.binding_rules) {
+        w.push(Rel::Bf, &[code, thr]);
+    }
     // Infra declarations and the binding names their entry closures read. Inert unless the tree
     // has a config the lane reads, so it costs no rows in a repo without one.
     let infra = crate::infra::emit(root, &tracked, &files, &edges, w, tables);

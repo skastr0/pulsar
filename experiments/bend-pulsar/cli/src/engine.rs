@@ -40,6 +40,26 @@ pub struct Findings {
     pub gx: Vec<Gx>,
     /// The `SQD ok skipped complete` line of the `pulsar-grow 0` section, when the section ran.
     pub grow_schema: Option<(u32, u32, bool)>,
+    /// The `pulsar-binding 0` section, when the facts had a `BF` row.
+    pub binding: Option<Binding>,
+}
+
+/// `BFX rule dep bind value thr declared`: deployable `dep` declares `declared` bindings, `value` of
+/// them unread; `bind` is one, and `thr` the rule's threshold.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Bfx {
+    pub rule: String,
+    pub dep: u32,
+    pub bind: u32,
+    pub value: u32,
+    pub thr: u32,
+    pub declared: u32,
+}
+
+/// The binding-drift section: the `BFX` lines and `BFS n`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Binding {
+    pub xs: Vec<Bfx>,
 }
 
 /// `UX rule fn reason`: function `fn_id` runs a query and `reason` is 1 (it has a `core.crap`
@@ -301,7 +321,7 @@ pub fn parse(text: &str) -> Result<Findings, String> {
             section = match name {
                 "findings" | "classctx" => name,
                 "layers" => name,
-                "sql" | "fanout" | "konst" | "hot" | "untested" | "grow" | "fnctx" => name,
+                "sql" | "fanout" | "konst" | "hot" | "untested" | "grow" | "fnctx" | "binding" => name,
                 _ => "other",
             };
             if section == "findings" {
@@ -312,6 +332,9 @@ pub fn parse(text: &str) -> Result<Findings, String> {
             }
             if section == "sql" {
                 f.sql.get_or_insert_with(Sql::default);
+            }
+            if section == "binding" {
+                f.binding.get_or_insert_with(Binding::default);
             }
             continue;
         }
@@ -356,6 +379,28 @@ pub fn parse(text: &str) -> Result<Findings, String> {
                 let have = f.sql.as_ref().map_or(0, |s| s.xs.len());
                 if n != have {
                     return Err(format!("SQS says {n} but {have} SQX lines came before it"));
+                }
+            }
+            "BFX" if section != "binding" => return Err("BFX outside the `pulsar-binding 0` section".into()),
+            "BFX" => {
+                let rule = it.next().ok_or("BFX without a rule")?.to_string();
+                let mut n = [0u32; 4];
+                for slot in &mut n {
+                    *slot = num(it.next().ok_or("BFX needs dep bind value thr")?)? as u32;
+                }
+                let tail = it.next().ok_or("BFX lacks the declared=<d> evidence")?;
+                let declared: u32 = tail
+                    .strip_prefix("declared=")
+                    .and_then(|d| d.parse().ok())
+                    .ok_or_else(|| format!("BFX evidence {tail:?} is not declared=<d>"))?;
+                let [dep, bind, value, thr] = n;
+                f.binding.get_or_insert_with(Binding::default).xs.push(Bfx { rule, dep, bind, value, thr, declared });
+            }
+            "BFS" => {
+                let n = num(it.next().ok_or("BFS without a count")?)? as usize;
+                let have = f.binding.as_ref().map_or(0, |b| b.xs.len());
+                if n != have {
+                    return Err(format!("BFS says {n} but {have} BFX lines came before it"));
                 }
             }
             tag @ ("LCYC" | "LCERT" | "LUNP" | "LOPQ" | "LDUP" | "LHUB" | "LS") => {
@@ -552,6 +597,15 @@ mod tests {
         assert!(parse("pulsar-findings 0\nLCYC 1 0\n").unwrap_err().contains("outside the"));
         assert!(parse("pulsar-findings 0\npulsar-layers 0\nLCYC 3 0 1\n").unwrap_err().contains("LCYC size"));
         assert!(parse("pulsar-findings 0\npulsar-layers 0\nLUNP 0 1\n").unwrap_err().contains("too few"));
+    }
+
+    #[test]
+    fn parses_the_binding_section() {
+        let t = "pulsar-findings 0\nCERT 1\nS 1 0 0\npulsar-binding 0\nBFX cloudflare.binding-drift 0 3 2 0 declared=5\nBFS 1\n";
+        let b = parse(t).unwrap().binding.unwrap();
+        assert_eq!(b.xs, vec![Bfx { rule: "cloudflare.binding-drift".into(), dep: 0, bind: 3, value: 2, thr: 0, declared: 5 }]);
+        assert!(parse("pulsar-findings 0\nBFX cloudflare.binding-drift 0 3 2 0 declared=5\n").unwrap_err().contains("outside"));
+        assert!(parse("pulsar-findings 0\npulsar-binding 0\nBFX cloudflare.binding-drift 0 3 2 0 declared=5\nBFS 0\n").unwrap_err().contains("BFS"));
     }
 
     #[test]

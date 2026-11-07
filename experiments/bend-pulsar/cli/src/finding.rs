@@ -70,6 +70,13 @@ pub const SQL_RULES: [Rule; 6] = [
     Rule { id: "sql.schema-drift", version: 1 },
 ];
 
+/// A binding a deployable declares that no code it reaches reads (infra facts, #694). On when the
+/// Cloudflare pack is on by evidence, or policy enables it by id.
+pub const BINDING_DRIFT: Rule = Rule { id: "cloudflare.binding-drift", version: 1 };
+
+/// The binding rules, in the order of their `BF` codes 1 to n (FACTS.md "Binding rules").
+pub const BINDING_RULES: [Rule; 1] = [BINDING_DRIFT];
+
 /// Engine `CYC`: a strongly connected set of files in the import graph.
 pub const IMPORT_CYCLE: Rule = Rule { id: "graph.import-cycle", version: 1 };
 
@@ -258,6 +265,7 @@ pub fn is_builtin_rule(id: &str) -> bool {
         || id == UNTESTED.id
         || metric_rule(id).is_ok()
         || SQL_RULES.iter().any(|r| r.id == id)
+        || BINDING_RULES.iter().any(|r| r.id == id)
         || [crate::layers::LAYER_CYCLE.id, crate::layers::UNPROVIDED.id, crate::layers::DUPLICATE.id, crate::layers::HUB.id].contains(&id)
         || id == "history.churn-concentration"
         || id == "history.co-change"

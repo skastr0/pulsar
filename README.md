@@ -91,6 +91,7 @@ The first run on a sha parses it. The result is cached per sha under `~/.pulsar/
 | `cloudflare.query-in-loop` | a D1 or Durable Object SQL query run once per loop iteration, directly or through a function it calls within 2 call edges (test code excluded) | Cloudflare pack |
 | `cloudflare.hot-query-fan-out` | that finding in code a request, alarm or queue entry point reaches within 3 call edges | Cloudflare pack |
 | `cloudflare.hot-unindexed-query` | a `sql.unindexed-filter` finding in such code | Cloudflare pack and `sql.unindexed-filter` enabled; `pulsar policy` says when it is off |
+| `cloudflare.binding-drift` | a binding a deployable declares in its wrangler or alchemy config that no file its entry reaches reads | Cloudflare pack, or `[rules] enable`; a deployable whose entry does not resolve is never drift |
 | `cloudflare.unbounded-growth` | a `SELECT` with no `LIMIT` and no key bound, on a table that code an entry point reaches (within 3 call edges) inserts into | Cloudflare pack; needs a complete `.sql` schema |
 
 ## Coverage

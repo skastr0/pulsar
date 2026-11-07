@@ -328,6 +328,18 @@ impl Effective {
         crate::finding::SQL_RULES.iter().enumerate().filter(|(_, r)| on(r.id)).map(|(i, _)| i as u32 + 1).collect()
     }
 
+    /// The `BF` rows (code, threshold) of the binding rules that are on. The Cloudflare pack,
+    /// switched on by evidence, turns binding drift on; `[rules] enable`/`disable` override it by
+    /// id. The threshold is 0: any binding a deployable declares and never reads is a finding.
+    pub fn binding_rule_codes(&self) -> Vec<(u32, u32)> {
+        let pack = self.catalogs.iter().any(|c| c.loaded.catalog.id == "cloudflare-workers");
+        let on = |id: &str| {
+            !self.policy.rules.disable.iter().any(|d| d == id)
+                && (pack || self.policy.rules.enable.iter().any(|e| e == id))
+        };
+        crate::finding::BINDING_RULES.iter().enumerate().filter(|(_, r)| on(r.id)).map(|(i, _)| (i as u32 + 1, 0)).collect()
+    }
+
     /// The catalog rules that are on: every rule of an active catalog unless `[rules] disable`
     /// lists it, sorted by id. The position in this list is the rule's `RL` id.
     pub fn active_rules(&self) -> Vec<ActiveRule> {

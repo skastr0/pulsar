@@ -9,8 +9,10 @@
 //!
 //! Reads are taken only in the entry closure of some deployable (its entry file and everything
 //! it imports, through the `I` edges the TypeScript lane resolved), so a repo whose `env` is a
-//! test fixture or an unrelated tool contributes no reads to this lane. `process.env` and
-//! `import.meta.env` are never binding reads.
+//! test fixture or an unrelated tool contributes no reads to this lane. `env` (the Workers
+//! parameter or import) is the binding channel; a container receives its bindings as the process
+//! environment, so `process.env.X` is a read inside a container's closure and nowhere else.
+//! `import.meta.env` is never a binding read.
 
 use crate::facts::{FactWriter, Rel, SideTables};
 use oxc_allocator::Allocator;
@@ -43,6 +45,9 @@ struct Deployable {
     /// 1-based line of the declaration; 0 when the dialect has no position.
     line: u32,
     name: String,
+    /// What kind of deployable it is: a worker reads bindings through `env`, a container through
+    /// the process environment.
+    kind: Decl,
     /// Entry files, repo-relative, resolved against the tracked set.
     entries: BTreeSet<String>,
     /// Declared binding names.
@@ -67,8 +72,8 @@ pub fn emit(
     let mut deployments = declarations(root, tracked, &mut st);
 
     // The read side: every binding read in the closure of some deployable's entry.
-    let closure = closure(edges, &deployments, &file_ids, &mut st);
-    let reads = reads_in_closure(root, files, &closure, &mut st);
+    let (closure, containers) = closure(edges, &deployments, &file_ids, &mut st);
+    let reads = reads_in_closure(root, files, &closure, &containers, &mut st);
 
     // Ids: deployables by (file, line, name); binding names in byte order across both sides.
     deployments.sort_by(|a, b| (&a.file, a.line, &a.name).cmp(&(&b.file, b.line, &b.name)));
@@ -163,6 +168,9 @@ fn merge<K: Ord>(out: &mut BTreeMap<K, Deployable>, key: K, d: Deployable) {
         .and_modify(|a| {
             a.entries.extend(d.entries.iter().cloned());
             a.bindings.extend(d.bindings.iter().cloned());
+            if d.kind == Decl::Container {
+                a.kind = Decl::Container;
+            }
             if a.line == 0 || (d.line > 0 && d.line < a.line) {
                 a.line = d.line;
             }
@@ -220,7 +228,14 @@ fn wrangler(path: &str, text: &str, kind: ConfigKind, track: &HashSet<&str>) -> 
         .or_else(|| dir.rsplit('/').next().filter(|d| !d.is_empty()).map(String::from))
         .ok_or("no name and no directory to name it after")?;
     let line = text.find(&format!("\"{name}\"")).map_or(0, |i| line_of(text, i as u32));
-    let mut d = Deployable { file: path.to_string(), line, name, entries: BTreeSet::new(), bindings: BTreeSet::new() };
+    let mut d = Deployable {
+        file: path.to_string(),
+        line,
+        name,
+        kind: Decl::Worker,
+        entries: BTreeSet::new(),
+        bindings: BTreeSet::new(),
+    };
     if let Some(main) = v.get("main").and_then(|m| m.as_str()) {
         d.entries.insert(join(dir, main));
     } else {
@@ -397,7 +412,7 @@ struct Decls<'a> {
     out: Vec<Deployable>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Decl {
     Worker,
     Container,
@@ -429,11 +444,12 @@ impl Decls<'_> {
         }
     }
 
-    fn add(&mut self, span_start: u32, name: &str, opts: Option<&ObjectExpression<'_>>) {
+    fn add(&mut self, span_start: u32, name: &str, opts: Option<&ObjectExpression<'_>>, kind: Decl) {
         let mut d = Deployable {
             file: self.file.to_string(),
             line: line_of(self.src, span_start),
             name: name.to_string(),
+            kind,
             entries: BTreeSet::new(),
             bindings: BTreeSet::new(),
         };
@@ -565,9 +581,8 @@ impl<'a> Visit<'a> for Decls<'a> {
                     Expression::ObjectExpression(o) => Some(&**o),
                     _ => None,
                 });
-                let _ = kind;
                 let name = name.to_string();
-                self.add(it.span.start, &name, opts);
+                self.add(it.span.start, &name, opts, kind);
             }
         } else if let Expression::StaticMemberExpression(m) = it.callee.get_inner_expression() {
             // `Class.make(...)`: a container's options, wrapped in a callback by the dialect.
@@ -579,6 +594,7 @@ impl<'a> Visit<'a> for Decls<'a> {
                             file: self.file.to_string(),
                             line: line_of(self.src, it.span.start),
                             name,
+                            kind: Decl::Container,
                             entries: BTreeSet::new(),
                             bindings: BTreeSet::new(),
                         };
@@ -598,25 +614,32 @@ impl<'a> Visit<'a> for Decls<'a> {
 
 // ---------------------------------------------------------------- reads
 
-/// The entry closure of every deployable: the entry files and every file their `I` edges reach.
+/// The entry closure of every deployable (the entry files and every file their `I` edges reach),
+/// and the part of it a container deployable reaches: a container's bindings arrive as the process
+/// environment, so its files read `process.env` names that a worker's files do not.
 fn closure(
     edges: &[[u32; 5]],
     deployments: &[Deployable],
     file_ids: &HashMap<&str, u32>,
     st: &mut Stats,
-) -> BTreeSet<u32> {
+) -> (BTreeSet<u32>, BTreeSet<u32>) {
     let mut adj: HashMap<u32, Vec<u32>> = HashMap::new();
     for e in edges {
         adj.entry(e[0]).or_default().push(e[1]);
     }
     let mut seen = BTreeSet::new();
+    let mut containers = BTreeSet::new();
     let mut queue = VecDeque::new();
     for d in deployments {
         for e in &d.entries {
             match file_ids.get(e.as_str()) {
                 Some(&id) => {
-                    if seen.insert(id) {
-                        queue.push_back(id);
+                    let container = d.kind == Decl::Container;
+                    if container && containers.insert(id) {
+                        queue.push_back((id, true));
+                    }
+                    if seen.insert(id) && !container {
+                        queue.push_back((id, false));
                     }
                 }
                 None => st.degraded.push(format!(
@@ -626,14 +649,19 @@ fn closure(
             }
         }
     }
-    while let Some(f) = queue.pop_front() {
+    while let Some((f, container)) = queue.pop_front() {
         for &n in adj.get(&f).into_iter().flatten() {
-            if seen.insert(n) {
-                queue.push_back(n);
+            let new = seen.insert(n);
+            if container {
+                if containers.insert(n) {
+                    queue.push_back((n, true));
+                }
+            } else if new {
+                queue.push_back((n, false));
             }
         }
     }
-    seen
+    (seen, containers)
 }
 
 /// Binding names read in one file of the entry closure, in file-id order.
@@ -641,6 +669,7 @@ fn reads_in_closure(
     root: &Path,
     files: &[String],
     closure: &BTreeSet<u32>,
+    containers: &BTreeSet<u32>,
     st: &mut Stats,
 ) -> Vec<(u32, String)> {
     let mut out = BTreeSet::new();
@@ -663,7 +692,7 @@ fn reads_in_closure(
             continue;
         }
         let sem = oxc_semantic::SemanticBuilder::new().with_build_nodes(true).build(&ret.program).semantic;
-        let mut r = Reads { sem: &sem, env: HashSet::new(), out: BTreeSet::new() };
+        let mut r = Reads { sem: &sem, env: HashSet::new(), process_env: containers.contains(&file), out: BTreeSet::new() };
         r.visit_program(&ret.program);
         out.extend(r.out.into_iter().map(|n| (file, n)));
     }
@@ -674,6 +703,9 @@ struct Reads<'a> {
     sem: &'a oxc_semantic::Semantic<'a>,
     /// Symbols bound by `import { env } from "cloudflare:workers"`.
     env: HashSet<oxc_syntax::symbol::SymbolId>,
+    /// Whether `process.env.X` is a binding read here: true in a container's closure, false in a
+    /// worker's.
+    process_env: bool,
     out: BTreeSet<String>,
 }
 
@@ -696,8 +728,18 @@ impl Reads<'_> {
         )
     }
 
+    /// `process.env`, whose members are a container's bindings.
+    fn process_env_object(e: &Expression<'_>) -> bool {
+        let Expression::StaticMemberExpression(m) = e.get_inner_expression() else { return false };
+        if m.property.name.as_str() != "env" {
+            return false;
+        }
+        matches!(m.object.get_inner_expression(), Expression::Identifier(o) if o.name.as_str() == "process")
+    }
+
     /// `env` (a parameter or import), `this.env`, `ctx.env` and `alias.env`: the Workers `Env`
-    /// conventions. `process.env` and `import.meta.env` are never one.
+    /// conventions. `process.env` is a container's channel, not a worker's, and `import.meta.env`
+    /// is never one.
     fn env_object(&self, e: &Expression<'_>) -> bool {
         match e.get_inner_expression() {
             Expression::Identifier(i) => self.env_ident(i),
@@ -734,7 +776,7 @@ impl<'a> Visit<'a> for Reads<'a> {
     }
 
     fn visit_static_member_expression(&mut self, it: &StaticMemberExpression<'a>) {
-        if self.env_object(&it.object) {
+        if self.env_object(&it.object) || (self.process_env && Self::process_env_object(&it.object)) {
             self.out.insert(it.property.name.to_string());
         }
         walk::walk_static_member_expression(self, it);
@@ -938,9 +980,30 @@ class C { fetch() { return this.env.ROOM; } }
         let alloc = Allocator::default();
         let ret = Parser::new(&alloc, src, SourceType::ts()).parse();
         let sem = oxc_semantic::SemanticBuilder::new().with_build_nodes(true).build(&ret.program).semantic;
-        let mut r = Reads { sem: &sem, env: HashSet::new(), out: BTreeSet::new() };
+        let mut r = Reads { sem: &sem, env: HashSet::new(), process_env: false, out: BTreeSet::new() };
         r.visit_program(&ret.program);
         let got: Vec<&str> = r.out.iter().map(String::as_str).collect();
         assert_eq!(got, ["ALIAS", "BUCKET", "DB", "KEY", "QUEUE", "ROOM"]);
+    }
+
+    #[test]
+    fn a_container_reads_process_env_and_a_worker_does_not() {
+        let src = r#"
+export function f(request: Request, env: Env) {
+  const greeting = process.env.GREETING;
+  const db = env.DB;
+  return [greeting, db];
+}
+"#;
+        let alloc = Allocator::default();
+        let ret = Parser::new(&alloc, src, SourceType::ts()).parse();
+        let sem = oxc_semantic::SemanticBuilder::new().with_build_nodes(true).build(&ret.program).semantic;
+        let reads = |process_env: bool| {
+            let mut r = Reads { sem: &sem, env: HashSet::new(), process_env, out: BTreeSet::new() };
+            r.visit_program(&ret.program);
+            r.out.into_iter().collect::<Vec<_>>()
+        };
+        assert_eq!(reads(false), ["DB"]);
+        assert_eq!(reads(true), ["DB", "GREETING"]);
     }
 }
