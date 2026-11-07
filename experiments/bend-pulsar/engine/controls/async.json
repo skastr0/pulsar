@@ -1,0 +1,134 @@
+[
+ {
+  "law": "ac_xrule_sound",
+  "bug": "Ac.xs drops the inside-an-exclusive-call test",
+  "old": "Ac.keep(Bool.and(S.Scope.has(ta, callee), S.Scope.has(tb, site)), Ad{r, site, fn}, Ac.xs(t, r, ta, tb))",
+  "new": "Ac.keep(S.Scope.has(ta, callee), Ad{r, site, fn}, Ac.xs(t, r, ta, tb))"
+ },
+ {
+  "law": "ac_xrule_sound",
+  "bug": "Ac.xin keeps an XN row whatever its outer call",
+  "old": "X.Cx.push_u(S.Scope.has(os, outer), site, Ac.xin(t, os))",
+  "new": "X.Cx.push_u(True{}, site, Ac.xin(t, os))"
+ },
+ {
+  "law": "ac_xrule_sound",
+  "bug": "Ac.both keeps a site that is not awaited",
+  "old": "X.Cx.push_u(S.Scope.has(xs, s), s, Ac.both(t, xs))",
+  "new": "X.Cx.push_u(True{}, s, Ac.both(t, xs))"
+ },
+ {
+  "law": "ac_xrule_complete",
+  "bug": "Ac.both lists no awaited site",
+  "old": "X.Cx.push_u(S.Scope.has(xs, s), s, Ac.both(t, xs))",
+  "new": "Ac.both(t, xs)"
+ },
+ {
+  "law": "ac_xrule_complete",
+  "bug": "Ac.osites lists no outer call",
+  "old": "X.Cx.push_u(S.Scope.has(oc, callee), site, Ac.osites(t, oc))",
+  "new": "Ac.osites(t, oc)"
+ },
+ {
+  "law": "ac_xrule_complete",
+  "bug": "Ac.xin lists no nested site",
+  "old": "X.Cx.push_u(S.Scope.has(os, outer), site, Ac.xin(t, os))",
+  "new": "Ac.xin(t, os)"
+ },
+ {
+  "law": "ac_drule_sound",
+  "bug": "Ac.ds drops the entry-point test",
+  "old": "Bool.and(S.Scope.has(tb, site), S.Scope.has(tc, fn))), Ad{r, site, fn}, Ac.ds(",
+  "new": "S.Scope.has(tb, site)), Ad{r, site, fn}, Ac.ds("
+ },
+ {
+  "law": "ac_drule_sound",
+  "bug": "Ac.de drops the dropped-value test",
+  "old": "Ac.keep(Bool.and(S.Scope.has(ta, target), Bool.and(S.Scope.has(tb, site), S.Scope.has(tc, fn))), Ad{r, site, fn}, Ac.de(t, r, ta, tb, tc))",
+  "new": "Ac.keep(Bool.and(S.Scope.has(ta, target), S.Scope.has(tc, fn)), Ad{r, site, fn}, Ac.de(t, r, ta, tb, tc))"
+ },
+ {
+  "law": "ac_drule_sound",
+  "bug": "the async branch runs whatever the row's async field",
+  "old": "Ac.dasync(U32.is_eq(a, 1), ces, fcs, r,",
+  "new": "Ac.dasync(True{}, ces, fcs, r,"
+ },
+ {
+  "law": "ac_drule_complete_class",
+  "bug": "Ac.ds lists no site",
+  "old": "Ac.keep(Bool.and(S.Scope.has(ta, callee), Bool.and(S.Scope.has(tb, site), S.Scope.has(tc, fn))), Ad{r, site, fn}, Ac.ds(t, r, ta, tb, tc))",
+  "new": "Ac.ds(t, r, ta, tb, tc)"
+ },
+ {
+  "law": "ac_drule_complete_async",
+  "bug": "the async branch lists nothing",
+  "old": "      Ac.de(ces, r, S.Scope.set(N.Nc.fns(fcs, 1, 0)), tb, tc)",
+  "new": "      Nil{}"
+ },
+ {
+  "law": "ac_excl_sound",
+  "bug": "Ac.xrules reports a rule no RX row holds",
+  "old": "      Nil{}\n    case Con{+k, t}:\n      List.append(&2, Ad, Ac.xrule(",
+  "new": "      Ac.xrule(f, Rx{0, 0, 0})\n    case Con{+k, t}:\n      List.append(&2, Ad, Ac.xrule("
+ },
+ {
+  "law": "ac_excl_complete",
+  "bug": "Ac.xrules reads only the first RX row",
+  "old": "List.append(&2, Ad, Ac.xrule(f, k), Ac.xrules(f, t))",
+  "new": "Ac.xrule(f, k)"
+ },
+ {
+  "law": "ac_dropped_sound",
+  "bug": "Ac.drules reports a rule no RD row holds",
+  "old": "      Nil{}\n    case Con{+k, t}:\n      List.append(&2, Ad, Ac.drule(",
+  "new": "      Ac.drule(f, Rd{0, 0, 0})\n    case Con{+k, t}:\n      List.append(&2, Ad, Ac.drule("
+ },
+ {
+  "law": "ac_dropped_complete",
+  "bug": "Ac.drules reads only the first RD row",
+  "old": "List.append(&2, Ad, Ac.drule(f, k), Ac.drules(f, t))",
+  "new": "Ac.drule(f, k)"
+ },
+ {
+  "law": "ac_lines_shape",
+  "bug": "the output omits the ADX lines",
+  "old": "List.append(&2, String, Ac.lines(\"ADX\", ds), [Ac.count(xs, ds)])",
+  "new": "[Ac.count(xs, ds)]"
+ },
+ {
+  "law": "async_on",
+  "bug": "with a rule row the section prints nothing",
+  "old": "      AsyncIn.go(AsyncCtx.decode(rows))",
+  "new": "      Some{Nil{}}"
+ },
+ {
+  "law": "async_go_lines",
+  "bug": "sorted facts are refused",
+  "old": "      Some{AsyncCtx.lines(f)}",
+  "new": "      None{}"
+ },
+ {
+  "law": "async_go_refuses",
+  "bug": "facts that do not decode print an empty section",
+  "old": "    case None{}:\n      None{}\n    case Some{AF{+css",
+  "new": "    case None{}:\n      Some{Nil{}}\n    case Some{AF{+css"
+ },
+ {
+  "law": "async_cs_unsorted_refuses",
+  "bug": "CS order is not checked",
+  "old": "Bool.and(Ac.cs_sorted(css), N.Nc.ce_sorted(ces))",
+  "new": "N.Nc.ce_sorted(ces)"
+ },
+ {
+  "law": "async_ce_unsorted_refuses",
+  "bug": "CE order is not checked",
+  "old": "Bool.and(Ac.cs_sorted(css), N.Nc.ce_sorted(ces))",
+  "new": "Ac.cs_sorted(css)"
+ },
+ {
+  "law": "async_off",
+  "bug": "with no rule row the section refuses",
+  "old": "    case False{}:\n      Some{Nil{}}",
+  "new": "    case False{}:\n      None{}"
+ }
+]
