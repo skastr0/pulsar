@@ -81,10 +81,10 @@ statement per map entry, one writes storage per pending item in an event handler
 one makes a network call per message in a webhook loop. A second corpus (an
 Effect + SQL app, measured by pulsar-ts-effect on its pinned snapshot) shows the
 same shape at larger scale: of 1,101 query call
-sites, 121 sit in syntactic loops and 1,053 run in an Effect context where
-iteration combinators (`Effect.forEach` and friends) hide the loop from a
-syntactic `loop_depth` — the N+1 mechanism needs iteration combinators as pack
-data, not just loop nodes.
+sites, 121 sit in syntactic loops and 1,053 run in an Effect context, where a
+syntactic `loop_depth` cannot see iteration combinators such as `Effect.forEach`;
+how many of them are per-element is not yet measured — that count needs the
+iteration-combinator data of the group-I context work.
 - Important severity note: DO `storage.sql.exec` is **synchronous** — an N+1 there
   costs CPU and input-gate hold time, not network round-trips. D1 (HTTP API) *would*
   be round-trips; App A uses DO SQLite only, no D1 bindings. The check should still
