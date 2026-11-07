@@ -57,12 +57,20 @@ fn join_norm(dir: &str, rel: &str) -> String {
     parts.join("/")
 }
 
+/// What a `use` path is resolved against.
+struct Env<'a> {
+    tree: usize,
+    roots: &'a [usize],
+    lib_root_of: &'a HashMap<String, usize>,
+    dep_names: &'a HashSet<String>,
+}
+
 struct Build<'a> {
     files: &'a HashMap<&'a str, u32>,
     paths: &'a HashMap<u32, &'a str>,
     parsed: &'a HashMap<u32, &'a RustFile>,
     nodes: Vec<Node>,
-    /// `(file, node)` of each file's top module, per tree: `tops[tree]`.
+    /// `(file -> node)` of each file's top module, per tree.
     tops: Vec<HashMap<u32, usize>>,
     test_files: HashSet<u32>,
     non_test_files: HashSet<u32>,
@@ -82,191 +90,216 @@ impl Build<'_> {
         idx
     }
 
-    fn walk(&mut self, tree: usize, node: usize, test: bool) {
-        let file = self.nodes[node].file;
-        let Some(pf) = self.parsed.get(&file).copied() else { return };
-        let decls: &[ModDecl] = &pf.mods;
-        for decl in decls {
-            // Find the module node this declaration sits in: descend by inline names.
-            let mut at = node;
-            let mut ok = true;
-            for seg in &decl.mod_path {
-                match self.nodes[at].children.get(seg) {
-                    Some(&c) => at = c,
-                    None => {
-                        ok = false;
-                        break;
-                    }
-                }
-            }
-            if !ok {
-                continue;
-            }
-            let t = test || decl.test;
-            if decl.inline {
-                let dir = join_norm(&self.nodes[at].dir, &decl.name);
-                let idx = self.nodes.len();
-                self.nodes.push(Node { file, parent: Some(at), children: HashMap::new(), dir: dir.clone(), base_dir: dir });
-                self.nodes[at].children.insert(decl.name.clone(), idx);
-                continue;
-            }
-            let cands: Vec<(String, bool)> = match &decl.path_attr {
-                Some(p) => vec![(join_norm(&self.nodes[at].base_dir, p), true)],
-                None => {
-                    let d = &self.nodes[at].dir;
-                    vec![
-                        (join_norm(d, &format!("{}.rs", decl.name)), false),
-                        (join_norm(d, &format!("{}/mod.rs", decl.name)), false),
-                    ]
-                }
-            };
-            let Some((fid, by_attr)) = cands
-                .iter()
-                .find_map(|(c, a)| self.files.get(c.as_str()).map(|&f| (f, *a)))
-            else {
-                self.unresolved += 1;
-                continue;
-            };
-            if self.tops[tree].contains_key(&fid) {
-                continue; // already in this tree: a `#[path]` loop or a shared file
-            }
-            let child = self.file_node(tree, fid, Some(at), by_attr);
-            self.nodes[at].children.insert(decl.name.clone(), child);
-            if t {
-                self.test_files.insert(fid);
-            } else {
-                self.non_test_files.insert(fid);
-            }
-            self.walk(tree, child, t);
+    fn inline_node(&mut self, at: usize, file: u32, name: &str) {
+        let dir = join_norm(&self.nodes[at].dir, name);
+        let idx = self.nodes.len();
+        self.nodes.push(Node { file, parent: Some(at), children: HashMap::new(), dir: dir.clone(), base_dir: dir });
+        self.nodes[at].children.insert(name.to_string(), idx);
+    }
+
+    /// Follow inline module names down from `from`; `None` if one is missing.
+    fn descend_inline(&self, from: usize, names: &[String]) -> Option<usize> {
+        names.iter().try_fold(from, |at, n| self.nodes[at].children.get(n).copied())
+    }
+
+    /// Candidate files for `mod x;` inside module node `at`, each with "loaded by `#[path]`".
+    fn candidates(&self, at: usize, decl: &ModDecl) -> Vec<(String, bool)> {
+        let n = &self.nodes[at];
+        match &decl.path_attr {
+            Some(p) => vec![(join_norm(&n.base_dir, p), true)],
+            None => vec![
+                (join_norm(&n.dir, &format!("{}.rs", decl.name)), false),
+                (join_norm(&n.dir, &format!("{}/mod.rs", decl.name)), false),
+            ],
         }
     }
 
-    fn resolve(&self, tree: usize, roots: &[usize], lib_root_of: &HashMap<String, usize>, start: usize, u: &UseRec, dep_names: &HashSet<String>) -> Result<u32, u32> {
-        let segs = &u.segs;
-        let Some(first) = segs.first() else { return Ok(self.nodes[start].file) };
-        let (mut cur, rest): (usize, &[String]) = if u.leading_colon {
-            match lib_root_of.get(first) {
-                Some(&r) => (r, &segs[1..]),
-                None => return Err(0),
-            }
+    fn find_file(&self, cands: &[(String, bool)]) -> Option<(u32, bool)> {
+        cands.iter().find_map(|(c, a)| self.files.get(c.as_str()).map(|&f| (f, *a)))
+    }
+
+    fn mark_test(&mut self, file: u32, test: bool) {
+        if test {
+            self.test_files.insert(file);
         } else {
-            match first.as_str() {
-                "crate" => (roots[tree], &segs[1..]),
-                "self" => (start, &segs[1..]),
-                "super" => {
-                    let mut at = start;
-                    let mut n = 0;
-                    while n < segs.len() && segs[n] == "super" {
-                        match self.nodes[at].parent {
-                            Some(p) => at = p,
-                            None => return Err(1),
-                        }
-                        n += 1;
-                    }
-                    (at, &segs[n..])
-                }
-                name => {
-                    if let Some(&c) = self.nodes[start].children.get(name) {
-                        (c, &segs[1..])
-                    } else if let Some(&r) = lib_root_of.get(name).filter(|_| dep_names.contains(name)) {
-                        (r, &segs[1..])
-                    } else if dep_names.contains(name) || matches!(name, "std" | "core" | "alloc" | "proc_macro" | "test") {
-                        return Err(0);
-                    } else {
-                        return Err(3);
-                    }
-                }
-            }
+            self.non_test_files.insert(file);
+        }
+    }
+
+    fn walk(&mut self, tree: usize, node: usize, test: bool) {
+        let file = self.nodes[node].file;
+        let parsed = self.parsed;
+        let Some(pf) = parsed.get(&file).copied() else { return };
+        for decl in &pf.mods {
+            self.walk_decl(tree, node, decl, test);
+        }
+    }
+
+    fn walk_decl(&mut self, tree: usize, node: usize, decl: &ModDecl, test: bool) {
+        let file = self.nodes[node].file;
+        let Some(at) = self.descend_inline(node, &decl.mod_path) else { return };
+        if decl.inline {
+            self.inline_node(at, file, &decl.name);
+            return;
+        }
+        let cands = self.candidates(at, decl);
+        let Some((fid, by_attr)) = self.find_file(&cands) else {
+            self.unresolved += 1;
+            return;
         };
+        if self.tops[tree].contains_key(&fid) {
+            return; // already in this tree: a `#[path]` loop or a shared file
+        }
+        let t = test || decl.test;
+        let child = self.file_node(tree, fid, Some(at), by_attr);
+        self.nodes[at].children.insert(decl.name.clone(), child);
+        self.mark_test(fid, t);
+        self.walk(tree, child, t);
+    }
+
+    /// One tree per target; returns the root node of each (`usize::MAX` if the root is not a file).
+    fn build_trees(&mut self, crates: &Crates) -> Vec<usize> {
+        let mut roots = vec![usize::MAX; crates.targets.len()];
+        for (ti, t) in crates.targets.iter().enumerate() {
+            let Some(&fid) = self.files.get(t.root.as_str()) else { continue };
+            let root = self.file_node(ti, fid, None, false);
+            roots[ti] = root;
+            self.non_test_files.insert(fid);
+            self.walk(ti, root, false);
+        }
+        roots
+    }
+
+    // ---- use resolution ---------------------------------------------------------------
+
+    fn descend(&self, mut cur: usize, rest: &[String]) -> usize {
         for seg in rest {
             match self.nodes[cur].children.get(seg) {
                 Some(&c) => cur = c,
                 None => break,
             }
         }
-        Ok(self.nodes[cur].file)
+        cur
     }
+
+    /// `super::super::x`: climb one parent per leading `super`.
+    fn supers<'s>(&self, start: usize, segs: &'s [String]) -> Result<(usize, &'s [String]), u32> {
+        let n = segs.iter().take_while(|s| s.as_str() == "super").count();
+        let mut at = start;
+        for _ in 0..n {
+            at = self.nodes[at].parent.ok_or(1u32)?;
+        }
+        Ok((at, &segs[n..]))
+    }
+
+    /// A first segment that is a bare name: a child module in scope, a workspace lib, or outside.
+    fn named_start<'s>(&self, env: &Env, start: usize, segs: &'s [String]) -> Result<(usize, &'s [String]), u32> {
+        let name = segs[0].as_str();
+        if let Some(&c) = self.nodes[start].children.get(name) {
+            return Ok((c, &segs[1..]));
+        }
+        let declared = env.dep_names.contains(name);
+        if let Some(&r) = env.lib_root_of.get(name).filter(|_| declared) {
+            return Ok((r, &segs[1..]));
+        }
+        if declared || matches!(name, "std" | "core" | "alloc" | "proc_macro" | "test") {
+            return Err(0);
+        }
+        Err(3)
+    }
+
+    fn resolve(&self, env: &Env, start: usize, u: &UseRec) -> Result<u32, u32> {
+        let segs = &u.segs;
+        let Some(first) = segs.first() else { return Ok(self.nodes[start].file) };
+        let (cur, rest) = if u.leading_colon {
+            let r = env.lib_root_of.get(first).ok_or(0u32)?;
+            (*r, &segs[1..])
+        } else {
+            match first.as_str() {
+                "crate" => (env.roots[env.tree], &segs[1..]),
+                "self" => (start, &segs[1..]),
+                "super" => self.supers(start, segs)?,
+                _ => self.named_start(env, start, segs)?,
+            }
+        };
+        Ok(self.nodes[self.descend(cur, rest)].file)
+    }
+
+    /// Resolve every `use` of every file in tree `ti`, pushing `I` and `U` rows.
+    fn resolve_tree(&self, env: &Env, g: &mut Graph) {
+        for (&file, &top) in &self.tops[env.tree] {
+            let Some(pf) = self.parsed.get(&file) else { continue };
+            for u in &pf.uses {
+                let at = self.descend_inline(top, &u.mod_path).unwrap_or(top);
+                match self.resolve(env, at, u) {
+                    Ok(dst) => g.i.push([file, dst, if u.public { 2 } else { 0 }, 1, 0]),
+                    Err(reason) => g.u.push([file, reason]),
+                }
+            }
+        }
+    }
+
+    /// A package's lib and bin roots depend on its member dependencies' libs.
+    fn crate_edges(&self, crates: &Crates, roots: &[usize], g: &mut Graph) {
+        for (ti, t) in crates.targets.iter().enumerate() {
+            if !(t.is_lib || t.is_bin) || roots[ti] == usize::MAX {
+                continue;
+            }
+            let src = self.nodes[roots[ti]].file;
+            for &d in &crates.packages[t.package].member_deps {
+                let libs = crates.targets.iter().enumerate().filter(|(dj, dt)| dt.package == d && dt.is_lib && roots[*dj] != usize::MAX);
+                for (dj, _) in libs {
+                    g.i.push([src, self.nodes[roots[dj]].file, 1, 1, 0]);
+                }
+            }
+        }
+    }
+}
+
+/// Lib root node per crate name, for `use member_crate::...`.
+fn lib_roots(crates: &Crates, roots: &[usize]) -> HashMap<String, usize> {
+    let mut out = HashMap::new();
+    for (ti, t) in crates.targets.iter().enumerate() {
+        if t.is_lib && roots[ti] != usize::MAX {
+            out.entry(t.crate_name.clone()).or_insert(roots[ti]);
+        }
+    }
+    out
 }
 
 /// Build the trees and resolve every `use`. `files` maps a repo-relative path to its file id;
 /// `parsed` holds the extracted file for each id.
 pub fn build(crates: &Crates, files: &HashMap<&str, u32>, parsed: &HashMap<u32, &RustFile>) -> Graph {
     let paths: HashMap<u32, &str> = files.iter().map(|(p, &i)| (i, *p)).collect();
-    let n_targets = crates.targets.len();
     let mut b = Build {
         files,
         paths: &paths,
         parsed,
         nodes: Vec::new(),
-        tops: vec![HashMap::new(); n_targets],
+        tops: vec![HashMap::new(); crates.targets.len()],
         test_files: HashSet::new(),
         non_test_files: HashSet::new(),
         unresolved: 0,
     };
-    let mut roots = vec![usize::MAX; n_targets];
-    for (ti, t) in crates.targets.iter().enumerate() {
-        let Some(&fid) = files.get(t.root.as_str()) else { continue };
-        let root = b.file_node(ti, fid, None, false);
-        roots[ti] = root;
-        b.non_test_files.insert(fid);
-        b.walk(ti, root, false);
-    }
-    // Lib root node per crate name, for `use member_crate::...`.
-    let mut lib_root_of: HashMap<String, usize> = HashMap::new();
-    for (ti, t) in crates.targets.iter().enumerate() {
-        if t.is_lib && roots[ti] != usize::MAX {
-            lib_root_of.entry(t.crate_name.clone()).or_insert(roots[ti]);
-        }
-    }
+    let roots = b.build_trees(crates);
+    let lib_root_of = lib_roots(crates, &roots);
     // A file also reached outside a cfg(test) mod is not test-only.
     let test_files: HashSet<u32> = b.test_files.difference(&b.non_test_files).copied().collect();
-
     let mut g = Graph { test_files, unresolved_mods: b.unresolved, ..Graph::default() };
+
     let mut reached: HashSet<u32> = HashSet::new();
     for (ti, t) in crates.targets.iter().enumerate() {
         if roots[ti] == usize::MAX {
             continue;
         }
-        let dep_names = &crates.packages[t.package].dep_names;
-        let tops: Vec<(u32, usize)> = b.tops[ti].iter().map(|(f, n)| (*f, *n)).collect();
-        let mut tree_files: Vec<u32> = tops.iter().map(|(f, _)| *f).collect();
+        let env = Env { tree: ti, roots: &roots, lib_root_of: &lib_root_of, dep_names: &crates.packages[t.package].dep_names };
+        let mut tree_files: Vec<u32> = b.tops[ti].keys().copied().collect();
         tree_files.sort_unstable();
+        reached.extend(&tree_files);
         g.trees.push((t.root.clone(), tree_files));
-        for (file, top) in tops {
-            reached.insert(file);
-            let Some(pf) = parsed.get(&file) else { continue };
-            for u in &pf.uses {
-                // Descend to the module the statement sits in.
-                let mut at = top;
-                for seg in &u.mod_path {
-                    if let Some(&c) = b.nodes[at].children.get(seg) {
-                        at = c;
-                    }
-                }
-                match b.resolve(ti, &roots, &lib_root_of, at, u, dep_names) {
-                    Ok(dst) => {
-                        let form = if u.public { 2 } else { 0 };
-                        g.i.push([file, dst, form, 1, 0]);
-                    }
-                    Err(reason) => g.u.push([file, reason]),
-                }
-            }
-        }
+        b.resolve_tree(&env, &mut g);
     }
-    // Crate-level edges: a package's lib and bin roots depend on its member dependencies' libs.
-    for (ti, t) in crates.targets.iter().enumerate() {
-        if !(t.is_lib || t.is_bin) || roots[ti] == usize::MAX {
-            continue;
-        }
-        let src = b.nodes[roots[ti]].file;
-        for &d in &crates.packages[t.package].member_deps {
-            for (dj, dt) in crates.targets.iter().enumerate() {
-                if dt.package == d && dt.is_lib && roots[dj] != usize::MAX {
-                    g.i.push([src, b.nodes[roots[dj]].file, 1, 1, 0]);
-                }
-            }
-        }
-    }
+    b.crate_edges(crates, &roots, &mut g);
     g.orphans = files.values().filter(|f| !reached.contains(f)).count();
     g
 }

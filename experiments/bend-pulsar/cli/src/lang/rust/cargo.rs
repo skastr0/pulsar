@@ -75,79 +75,92 @@ fn rel_to(root: &Path, abs: &str) -> Option<String> {
     Some(p.to_string_lossy().replace('\\', "/"))
 }
 
+/// A conventional target when metadata failed: crate name, root path, is lib, is bin.
+type ConvTarget = (String, String, bool, bool);
+
+/// A package as cargo reported it, or the conventional stand-in.
+struct Raw {
+    pkg: Pkg,
+    conv: Vec<ConvTarget>,
+}
+
 /// Discover every workspace under `root` from its tracked `Cargo.toml` files.
 pub fn discover(root: &Path, tracked: &[String], files: &HashSet<&str>) -> Crates {
-    let mut manifests: Vec<&String> = tracked
-        .iter()
-        .filter(|p| p.as_str() == "Cargo.toml" || p.ends_with("/Cargo.toml"))
-        .collect();
-    manifests.sort();
     let mut out = Crates::default();
+    let raw = load_packages(root, tracked, files, &mut out.fallbacks);
+    let names: Vec<String> = raw.iter().map(|r| r.pkg.name.clone()).collect();
+    for (pi, r) in raw.iter().enumerate() {
+        out.packages.push(package_of(root, pi, r, &names));
+        out.targets.extend(targets_of(root, pi, r));
+    }
+    out
+}
+
+/// One `cargo metadata` call per workspace: a manifest already listed as a member of an earlier
+/// workspace is skipped.
+fn load_packages(root: &Path, tracked: &[String], files: &HashSet<&str>, fallbacks: &mut Vec<(String, String)>) -> Vec<Raw> {
+    let mut manifests: Vec<&String> =
+        tracked.iter().filter(|p| p.as_str() == "Cargo.toml" || p.ends_with("/Cargo.toml")).collect();
+    manifests.sort();
     let mut known: BTreeSet<String> = BTreeSet::new();
-    let mut raw: Vec<(Pkg, Vec<(String, String, bool, bool)>)> = Vec::new();
+    let mut raw = Vec::new();
     for m in manifests {
-        if known.contains(m.as_str()) {
+        if !known.insert(m.clone()) {
             continue;
         }
         match metadata(root, m) {
             Ok(meta) => {
                 for p in meta.packages {
-                    if let Some(rel) = rel_to(root, &p.manifest_path) {
-                        known.insert(rel);
-                    }
-                    raw.push((p, Vec::new()));
+                    known.extend(rel_to(root, &p.manifest_path));
+                    raw.push(Raw { pkg: p, conv: Vec::new() });
                 }
-                known.insert(m.clone());
             }
             Err(e) => {
-                out.fallbacks.push((m.clone(), e));
-                known.insert(m.clone());
-                if let Some(p) = conventional(root, m, files) {
-                    raw.push(p);
-                }
+                fallbacks.push((m.clone(), e));
+                raw.extend(conventional(root, m, files));
             }
         }
     }
-    // Assign package indices, then targets and member dependencies.
-    let names: Vec<String> = raw.iter().map(|(p, _)| p.name.clone()).collect();
-    for (pi, (p, conv_targets)) in raw.iter().enumerate() {
-        let mut pkg = Package {
-            name: p.name.clone(),
-            manifest: rel_to(root, &p.manifest_path).unwrap_or_else(|| p.manifest_path.clone()),
-            ..Package::default()
-        };
-        pkg.dep_names.insert(underscored(&p.name));
-        for d in &p.dependencies {
-            let used = underscored(d.rename.as_deref().unwrap_or(&d.name));
-            pkg.dep_names.insert(used);
-            let normal = matches!(d.kind.as_deref(), None | Some("build"));
-            if normal {
-                if let Some(mi) = names.iter().position(|n| n == &d.name) {
-                    if mi != pi && !pkg.member_deps.contains(&mi) {
-                        pkg.member_deps.push(mi);
-                    }
-                }
-            }
+    raw
+}
+
+fn package_of(root: &Path, pi: usize, r: &Raw, names: &[String]) -> Package {
+    let p = &r.pkg;
+    let mut pkg = Package {
+        name: p.name.clone(),
+        manifest: rel_to(root, &p.manifest_path).unwrap_or_else(|| p.manifest_path.clone()),
+        ..Package::default()
+    };
+    pkg.dep_names.insert(underscored(&p.name));
+    for d in &p.dependencies {
+        pkg.dep_names.insert(underscored(d.rename.as_deref().unwrap_or(&d.name)));
+        // Dev-dependencies may legally form cycles, so they are not crate edges.
+        if !matches!(d.kind.as_deref(), None | Some("build")) {
+            continue;
         }
-        out.packages.push(pkg);
-        for t in &p.targets {
-            let Some(root_rel) = rel_to(root, &t.src_path) else { continue };
-            let is_lib = t.kind.iter().any(|k| k == "lib" || k == "rlib" || k == "proc-macro" || k == "dylib" || k == "cdylib" || k == "staticlib");
-            let is_bin = t.kind.iter().any(|k| k == "bin");
-            let crate_name = underscored(&t.name);
-            out.targets.push(Target { crate_name, root: root_rel, is_lib, is_bin, package: pi });
-        }
-        for (name, root_rel, is_lib, is_bin) in conv_targets {
-            out.targets.push(Target {
-                crate_name: underscored(name),
-                root: root_rel.clone(),
-                is_lib: *is_lib,
-                is_bin: *is_bin,
-                package: pi,
-            });
+        let member = names.iter().position(|n| n == &d.name).filter(|&mi| mi != pi);
+        if let Some(mi) = member.filter(|mi| !pkg.member_deps.contains(mi)) {
+            pkg.member_deps.push(mi);
         }
     }
-    out
+    pkg
+}
+
+fn targets_of(root: &Path, pi: usize, r: &Raw) -> Vec<Target> {
+    let from_meta = r.pkg.targets.iter().filter_map(|t| {
+        let root_rel = rel_to(root, &t.src_path)?;
+        let is_lib = t.kind.iter().any(|k| matches!(k.as_str(), "lib" | "rlib" | "proc-macro" | "dylib" | "cdylib" | "staticlib"));
+        let is_bin = t.kind.iter().any(|k| k == "bin");
+        Some(Target { crate_name: underscored(&t.name), root: root_rel, is_lib, is_bin, package: pi })
+    });
+    let from_conv = r.conv.iter().map(|(name, root_rel, is_lib, is_bin)| Target {
+        crate_name: underscored(name),
+        root: root_rel.clone(),
+        is_lib: *is_lib,
+        is_bin: *is_bin,
+        package: pi,
+    });
+    from_meta.chain(from_conv).collect()
 }
 
 fn metadata(root: &Path, manifest_rel: &str) -> Result<Meta, String> {
@@ -171,7 +184,7 @@ fn conventional(
     root: &Path,
     manifest_rel: &str,
     files: &HashSet<&str>,
-) -> Option<(Pkg, Vec<(String, String, bool, bool)>)> {
+) -> Option<Raw> {
     let dir = manifest_rel.strip_suffix("Cargo.toml").unwrap_or("");
     let text = std::fs::read_to_string(root.join(manifest_rel)).ok()?;
     let mut in_pkg = false;
@@ -215,5 +228,5 @@ fn conventional(
         targets: Vec::new(),
         dependencies: Vec::new(),
     };
-    Some((pkg, targets))
+    Some(Raw { pkg, conv: targets })
 }
