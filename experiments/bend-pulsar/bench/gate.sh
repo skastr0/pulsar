@@ -70,7 +70,10 @@ want() { # $1=name -> 0 if selected
   return 1
 }
 
-loadavg() { sysctl -n vm.loadavg | tr -d '{}' | awk '{print $1}'; }
+loadavg() {
+  if command -v sysctl >/dev/null 2>&1; then sysctl -n vm.loadavg | tr -d '{}' | awk '{print $1}';
+  else cut -d' ' -f1 /proc/loadavg; fi
+}
 
 TIMEDIR=$(mktemp -d /tmp/pulsar-gate.XXXXXX)
 trap 'rm -rf "$TIMEDIR"' EXIT
@@ -78,25 +81,38 @@ CAP_OUT=$TIMEDIR/cap.out; CAP_ERR=$TIMEDIR/cap.err
 RESULTS=$TIMEDIR/results.jsonl
 : >"$RESULTS"
 
-# timed <out> <err> <cmd...> : run under /usr/bin/time -l; sets T_WALL T_CPU T_RSS T_RC
-# /usr/bin/time -l prints "<r> real <u> user <s> sys" on one line and
-# "<bytes>  maximum resident set size" on another.
+# timed <out> <err> <cmd...> : run under /usr/bin/time; sets T_WALL T_CPU T_RSS T_RC
+# BSD time -l prints "<r> real <u> user <s> sys" plus "<bytes> maximum resident
+# set size"; GNU time -f '%e %U %S %M' prints wall user sys maxrss-kb on one
+# line. T_RSS is always bytes.
 T_WALL=""; T_CPU=""; T_RSS=""; T_RC=0
+TIME_FMT=""
+if /usr/bin/time -l true 2>&1 | grep -q ' real '; then TIME_FMT=bsd; else TIME_FMT=gnu; fi
 timed() {
   local out=$1 err=$2; shift 2
-  "$@" >"$out" 2>"$err"
+  if [ "$TIME_FMT" = bsd ]; then
+    /usr/bin/time -l "$@" >"$out" 2>"$err"
+  else
+    /usr/bin/time -f '%e %U %S %M' "$@" >"$out" 2>"$err"
+  fi
   T_RC=$?
-  read T_WALL T_CPU T_RSS <<<"$(awk '
-    / real / && / user / && / sys / {
-      for (i = 1; i <= NF; i++) {
-        if ($i == "real") w = $(i-1)
-        if ($i == "user") u = $(i-1)
-        if ($i == "sys")  s = $(i-1)
+  if [ "$TIME_FMT" = bsd ]; then
+    read T_WALL T_CPU T_RSS <<<"$(awk '
+      / real / && / user / && / sys / {
+        for (i = 1; i <= NF; i++) {
+          if ($i == "real") w = $(i-1)
+          if ($i == "user") u = $(i-1)
+          if ($i == "sys")  s = $(i-1)
+        }
       }
-    }
-    /maximum resident set size/ { r = $1 }
-    END { printf "%.3f %.3f %d", w+0, u+s, r+0 }
-  ' "$err")"
+      /maximum resident set size/ { r = $1 }
+      END { printf "%.3f %.3f %d", w+0, u+s, r+0 }
+    ' "$err")"
+  else
+    read T_WALL T_USER T_SYS T_KB <<<"$(tail -1 "$err")"
+    T_CPU=$(awk -v u="$T_USER" -v s="$T_SYS" 'BEGIN{printf "%.3f", u+s}')
+    T_RSS=$(awk -v k="$T_KB" 'BEGIN{printf "%d", k*1024}')
+  fi
 }
 
 emit_result() { # record fields on argv -> append one JSON line to $RESULTS
@@ -180,11 +196,12 @@ done <<EOF
 $ROWS
 EOF
 
-CLI_SHA=$(shasum -a 256 "$CLI" | awk '{print $1}')
-ENG_SHA=$(shasum -a 256 "$ENGINE" | awk '{print $1}')
+SHA256() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | awk '{print $1}'; else shasum -a 256 "$1" | awk '{print $1}'; fi; }
+CLI_SHA=$(SHA256 "$CLI")
+ENG_SHA=$(SHA256 "$ENGINE")
 SOURCE_SHA=$(git -C "$REPO" rev-parse HEAD 2>/dev/null || echo "")
-MODEL=$(sysctl -n hw.model)
-OSV=$(sw_vers -productVersion)
+MODEL=$(sysctl -n hw.model 2>/dev/null || uname -sm)
+OSV=$(sw_vers -productVersion 2>/dev/null || { . /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-$(uname -sr)}"; })
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
 if [ "$MODE" = record ]; then
