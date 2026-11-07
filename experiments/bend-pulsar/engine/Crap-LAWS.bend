@@ -6,8 +6,8 @@
 # Crap.lines. MemC, Measured and Sound below only describe outputs.
 #
 # Not covered by any law, by design: Crap.join (FnM and CV rows to Cr records),
-# like the decoders, and the evidence tail (Crap.ev). Both are shown against
-# Crap-CHECK.bend.
+# like the decoders; it is shown against Crap-CHECK.bend. The evidence tail (Crap.ev)
+# and its cause are covered by C1-C5.
 
 import Base
 import ./Metrics.bend as M
@@ -149,3 +149,55 @@ law crap_skips_tests:
   for +v: Nat
   for +ms: List<&2, C.CrM>
   {C.Crap.findings(thr, Con{C.CrM{fn, c, cov, n, v, True{}}, ms}) == C.Crap.findings(thr, ms) : List<&2, M.Finding>}
+
+# ---- C. the cause -----------------------------------------------------------------------------
+# C1-C2. cause is complexity-only exactly when c u^3 <= n^3 (u = coverable - covered).
+law crap_cause_complexity_only:
+  for +c: Nat
+  for +cov: Nat
+  for +n: Nat
+  for h: {C.Crap.cause(c, cov, n) == True{} : Bool}
+  N.Le(Nat.mul(c, C.Crap.cube(Nat.sub(n, cov))), C.Crap.cube(n))
+
+law crap_cause_coverage:
+  for +c: Nat
+  for +cov: Nat
+  for +n: Nat
+  for h: {C.Crap.cause(c, cov, n) == False{} : Bool}
+  N.Le(1n+C.Crap.cube(n), Nat.mul(c, C.Crap.cube(Nat.sub(n, cov))))
+
+law crap_cause_name_complexity:
+  {C.Crap.cause_name(True{}) == "complexity-only" : String}
+
+law crap_cause_name_coverage:
+  {C.Crap.cause_name(False{}) == "coverage" : String}
+
+# C3-C5. the evidence of fn is the tail of its own record, with the cause; a function with
+# no record (no coverage data) has none.
+law crap_ev_none:
+  for +fn: U32
+  {C.Crap.ev(fn, Nil{}) == "" : String}
+
+law crap_ev_skip:
+  for +fn: U32
+  for +f: U32
+  for +c: Nat
+  for +cov: Nat
+  for +n: Nat
+  for +v: Nat
+  for +test: Bool
+  for +t: List<&2, C.CrM>
+  for h: {U32.is_eq(f, fn) == False{} : Bool}
+  {C.Crap.ev(fn, Con{C.CrM{f, c, cov, n, v, test}, t}) == C.Crap.ev(fn, t) : String}
+
+law crap_ev_hit:
+  for +fn: U32
+  for +f: U32
+  for +c: Nat
+  for +cov: Nat
+  for +n: Nat
+  for +v: Nat
+  for +test: Bool
+  for +t: List<&2, C.CrM>
+  for h: {U32.is_eq(f, fn) == True{} : Bool}
+  {C.Crap.ev(fn, Con{C.CrM{f, c, cov, n, v, test}, t}) == " cyclomatic=" ++ Nat.show(c) ++ " covered=" ++ Nat.show(cov) ++ " coverable=" ++ Nat.show(n) ++ " cause=" ++ C.Crap.cause_name(C.Crap.cause(c, cov, n)) : String}

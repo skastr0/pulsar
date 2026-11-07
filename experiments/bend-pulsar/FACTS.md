@@ -103,7 +103,7 @@ each in function-id order. Each line carries an evidence tail of `key=value` tok
 facts. A reader that takes the first four fields only stays correct.
 
 ```
-FX core.crap <fn> <crap> <thr> cyclomatic=<c> covered=<covered> coverable=<coverable>
+FX core.crap <fn> <crap> <thr> cyclomatic=<c> covered=<covered> coverable=<coverable> cause=<complexity-only|coverage>
 FX core.hotspot <fn> <churn> <thr> churn=CFN <base-rule>=<value>/<thr> ...
 FX core.risky-change <fn> <churn> <thr> churn=CFN core.crap=<crap>/<thr>
 ```
@@ -112,6 +112,11 @@ FX core.risky-change <fn> <churn> <thr> churn=CFN core.crap=<crap>/<thr>
   A function with no `CV` row, or `coverable` 0 or over 32768, has no data and no finding. That is
   different from 0% coverage (`covered` 0, CRAP = c² + c). `covered > coverable`, a `CV` row without
   3 fields, or a `CV` id that is not a function in id order refuses the run.
+  `cause` says which term drives the score: `complexity-only` when the coverage term is at most c,
+  exactly `c × u³ ≤ coverable³` in integers with `u = coverable − covered`, and `coverage` otherwise.
+  There are only these two values, and a function without coverage data has no line and so no cause
+  (Crap-LAWS C1-C5). Delta lists complexity-only CRAP under the function's cyclomatic finding, not
+  on the test-priority list.
 - `core.hotspot` (churn default 2, so at least 3 commits): a `core.cyclomatic`, `core.nesting` or `core.npath`
   finding AND churn over the threshold. `core.length` is not a base.
 - `core.risky-change` (same threshold): a `core.crap` finding AND churn over the threshold.

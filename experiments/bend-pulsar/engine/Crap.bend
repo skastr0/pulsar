@@ -15,9 +15,10 @@
 #   covered > coverable             invalid facts: the run is refused
 #   covered = 0                     0%: CRAP = c^2 + c
 #
-#   FX core.crap <fn> <crap> <threshold> cyclomatic=<c> covered=<covered> coverable=<n>
+#   FX core.crap <fn> <crap> <threshold> cyclomatic=<c> covered=<covered> coverable=<n> cause=<complexity-only|coverage>
 #        CRAP strictly over the threshold, test functions (TF) excluded; the tail is
 #        the finding's input facts (FM cyclomatic and the CV row)
+#        cause: complexity-only iff c u^3 <= n^3 (u = n - covered), else coverage
 # The join of FnM and CV rows (Crap.join) is unproven, like the builder in
 # Metrics.bend; the laws start at the joined records.
 
@@ -88,6 +89,19 @@ def Crap.term(+c: Nat, +u: Nat, +n: Nat) -> Nat:
 
 def Crap.value(+c: Nat, +covered: Nat, +n: Nat) -> Nat:
   Nat.add(Crap.term(c, Nat.sub(n, covered), n), c)
+
+# The cause of a function's CRAP: complexity-only when the coverage term c^2 u^3 / n^3 is at
+# most c, that is c u^3 <= n^3 in integers (u = n - covered); otherwise coverage. Delta lists
+# complexity-only CRAP under the function's cyclomatic finding, not as a test priority.
+def Crap.cause(+c: Nat, +covered: Nat, +n: Nat) -> Bool:
+  Crap.ge(Crap.cube(n), Nat.mul(c, Crap.cube(Nat.sub(n, covered))))
+
+def Crap.cause_name(b: Bool) -> String:
+  match b:
+    case True{}:
+      "complexity-only"
+    case False{}:
+      "coverage"
 
 # ---- measures and findings --------------------------------------------------------------------
 def Crap.measure(x: Cr) -> CrM:
@@ -169,13 +183,17 @@ def Crap.ev_pick(hit: Bool, s: String, rest: String) -> String:
       rest
 
 # ---- output -----------------------------------------------------------------------------------
+def Crap.tail(+c: Nat, +covered: Nat, +n: Nat) -> String:
+  " cyclomatic=" ++ Nat.show(c) ++ " covered=" ++ Nat.show(covered) ++ " coverable=" ++ Nat.show(n) ++ " cause=" ++ Crap.cause_name(Crap.cause(c, covered, n))
+
 # The evidence of a finding: the CrM record of its function (the first one, ids are unique).
+# A function with no record (no coverage data) has no evidence, so no cause.
 def Crap.ev(+fn: U32, ms: List<&2, CrM>) -> String:
   match ms:
     case Nil{}:
       ""
     case Con{CrM{+f, +c, +covered, +n, v, test}, t}:
-      Crap.ev_pick(U32.is_eq(f, fn), " cyclomatic=" ++ Nat.show(c) ++ " covered=" ++ Nat.show(covered) ++ " coverable=" ++ Nat.show(n), Crap.ev(fn, t))
+      Crap.ev_pick(U32.is_eq(f, fn), Crap.tail(c, covered, n), Crap.ev(fn, t))
 
 def Crap.fx_line(+ms: List<&2, CrM>, x: M.Finding) -> String:
   match x:
