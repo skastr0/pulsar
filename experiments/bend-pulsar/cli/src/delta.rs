@@ -1,6 +1,10 @@
 //! `pulsar delta <base> <head>`: the findings a change added and removed, and how measured values
 //! moved.
 //!
+//! What was added, allowed, removed, needs coverage, worsened and improved is decided by the
+//! engine's proven delta section (`delta_engine`, FACTS.md "Delta"); this file evaluates the two
+//! shas, follows renames, and renders.
+//!
 //! Each sha is evaluated from a private checkout: a temporary index plus `git checkout-index`
 //! materialises the tree, so the repository's own index, worktree list and refs are never
 //! written (many agents share one checkout). The checkout is deleted when evaluation ends.
@@ -691,50 +695,6 @@ struct Trend {
     worse: bool,
 }
 
-/// Functions whose measured values moved: the same key, or the same symbol in a file git renamed.
-/// By default only functions with a metric finding on either side; with `all`, every function.
-fn trends(before: &Eval, after: &Eval, renames: &Renames, all: bool) -> Vec<Trend> {
-    let flagged = |e: &Eval| -> BTreeSet<u64> {
-        e.findings
-            .values()
-            .filter(|f| f.rule.id.starts_with("core.") && !needs_coverage(&f.rule))
-            .flat_map(|f| f.subjects.iter())
-            .filter_map(|s| match s {
-                Subject::Function { key, .. } => Some(*key),
-                Subject::File { .. } | Subject::Symbol { .. } => None,
-            })
-            .collect()
-    };
-    let (fb, fa) = (flagged(before), flagged(after));
-    // Base functions by (head path, symbol), for the ones whose key changed with a rename. A
-    // (path, symbol) that two functions share is ambiguous and not matched.
-    let mut by_place: BTreeMap<(&str, &str), Vec<(&u64, &Measure)>> = BTreeMap::new();
-    for (k, m) in &before.measures {
-        by_place.entry((renames.head_path(&m.path), m.chain.as_str())).or_default().push((k, m));
-    }
-    let mut out = Vec::new();
-    for (key, new) in &after.measures {
-        let found = match before.measures.get(key) {
-            Some(m) => Some((key, m)),
-            None => match by_place.get(&(new.path.as_str(), new.chain.as_str())).map(Vec::as_slice) {
-                Some([(k, m)]) if !after.measures.contains_key(*k) => Some((*k, *m)),
-                _ => None,
-            },
-        };
-        let Some((base_key, old)) = found else { continue };
-        if !all && !fb.contains(base_key) && !fa.contains(key) {
-            continue;
-        }
-        let changes: Vec<_> = (0..5).filter(|&i| old.m[i] != new.m[i]).map(|i| (METRICS[i], old.m[i], new.m[i])).collect();
-        if changes.is_empty() {
-            continue;
-        }
-        let worse = changes.iter().any(|(_, o, n)| n > o);
-        out.push(Trend { key: *key, head: new.clone(), changes, worse });
-    }
-    out
-}
-
 impl Trend {
     fn label(&self) -> &'static str {
         if self.worse { "worsened" } else { "improved" }
@@ -826,43 +786,6 @@ fn compare<'a>(before: &'a Eval, after: &'a Eval, renames: &Renames, trend_all: 
         unmatched_moves,
         rule_version_changed,
     })
-}
-
-/// The CLI's own set difference, kept only to check the engine's delta against it byte for byte.
-fn compare_set<'a>(before: &'a Eval, after: &'a Eval, renames: &Renames, trend_all: bool) -> Diff<'a> {
-    // Coverage-dependent findings (head only) are listed apart: base has no coverage to compare.
-    let (coverage, plain): (Vec<_>, Vec<_>) = after.findings.iter().partition(|(_, f)| needs_coverage(&f.rule));
-    let mut new: Vec<&Finding> = plain.iter().filter(|(k, _)| !before.findings.contains_key(*k)).map(|(_, f)| *f).collect();
-    let mut removed: Vec<&Finding> = before.findings.iter().filter(|(k, _)| !after.findings.contains_key(k)).map(|(_, f)| f).collect();
-    // A finding whose key changed only because git renamed its file is the same finding.
-    let pairs = rename::match_findings(&removed, &new, renames);
-    removed.retain(|f| !pairs.iter().any(|(b, _)| *b == f.key()));
-    new.retain(|f| !pairs.iter().any(|(_, h)| *h == f.key()));
-    let unmatched_moves = rename::unmatched_moves(&removed, &new);
-    let rule_version_changed = version_changes(&pairs, &before.findings, &after.findings);
-    // A decision committed in head allows a new finding with a reason; it does not count as added.
-    let (allowed, added): (Vec<&Finding>, Vec<&Finding>) =
-        new.into_iter().partition(|f| after.policy.allowed(&hex(f.key())).is_some());
-    let unchanged = plain.len() - added.len() - allowed.len();
-    let degraded = before
-        .degraded
-        .iter()
-        .map(|d| ("base", d))
-        .chain(after.degraded.iter().map(|d| ("head", d)))
-        .collect();
-    Diff {
-        added,
-        allowed,
-        removed,
-        coverage: coverage.into_iter().map(|(_, f)| f).collect(),
-        unchanged,
-        trends: trends(before, after, renames, trend_all),
-        degraded,
-        renamed_files: renames.count(),
-        renamed_findings: pairs.len() - rule_version_changed.iter().map(|v| v.3).sum::<usize>(),
-        unmatched_moves,
-        rule_version_changed,
-    }
 }
 
 /// The rules whose version differs between a matched base and head finding, with how many findings
@@ -968,13 +891,9 @@ pub fn run(a: &Args) -> Result<u8, String> {
         eprintln!("pulsar: {name} {} cache={} policy={}ms facts={}ms engine={}ms", &sha[..12], t.cache, t.checkout_ms, t.facts_ms, t.engine_ms);
     }
     let renames = rename::detect(&a.repo, &base, &head)?;
-    let diff = if std::env::var_os("PULSAR_DELTA_ORACLE").is_some_and(|v| v == "set") {
-        compare_set(&before, &after, &renames, a.trend)
-    } else {
-        let engine = engine::locate()?;
-        let scratch = Scratch::new("engine")?;
-        compare(&before, &after, &renames, a.trend, &|rows, name| delta_engine::run(&engine, rows, &scratch.0, name))?
-    };
+    let engine = engine::locate()?;
+    let scratch = Scratch::new("engine")?;
+    let diff = compare(&before, &after, &renames, a.trend, &|rows, name| delta_engine::run(&engine, rows, &scratch.0, name))?;
     print!("{}", if a.json { render_json(&diff, &after, &base, &head) } else { render_text(&diff, &after, &base, &head) });
     Ok(if diff.added.is_empty() { 0 } else { 1 })
 }
