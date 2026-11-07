@@ -77,6 +77,5 @@ Weighted means, categories, readiness, bands, personas, the quiz, backpressure, 
 
 ## Open decisions
 
-1. Licence notices for bundled crates (oxc, tsrs, tree-sitter). Legal must rule on these before anything ships; local use is not affected.
-2. Which detectors make the first cut.
-3. The fact format v0, informed by `research/fact-stores.md` and `research/fact-extraction.md`.
+1. Which detectors make the first cut.
+2. The fact format v0, informed by `research/fact-stores.md` and `research/fact-extraction.md`.

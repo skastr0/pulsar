@@ -52,7 +52,7 @@ Pulsar's defaults are generic, always.
 ## Clean room
 
 - Learn from specs, papers, official docs and design write-ups. Existing tools serve only as test oracles. Don't read or port implementation source.
-- Licences and third-party notices for bundled components (oxc, tsrs, tree-sitter) go to Legal before anything ships. Local use isn't blocked.
+- Bundled components (oxc, tsrs, tree-sitter) are used as dependencies, under their own licences. Ship whatever third-party notices those licences require.
 
 ## Tooling
 
