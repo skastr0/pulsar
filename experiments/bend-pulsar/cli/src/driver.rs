@@ -59,7 +59,43 @@ pub fn build(
     w: &mut FactWriter,
     tables: &mut SideTables,
 ) -> Result<(FactSet, Stats), String> {
-    // One id space: every existing file some lane owns, byte-sorted.
+    let files = list_files(root, &tracked, lanes);
+    let ts_files = lane_files(&files, lang::ts::owns);
+    let rust_files = lane_files(&files, lang::rust::owns);
+    let bend_files = lane_files(&files, lang::bend::owns);
+
+    let mut st = Stats { files: files.len(), ts_files: ts_files.len(), rust_files: rust_files.len(), bend_files: bend_files.len(), ..Stats::default() };
+    push_files(w, &files, &mut st);
+
+    // Lanes run one after another: each already uses every core, and one lane's ASTs are gone
+    // before the next lane parses.
+    let mut per: Vec<Option<FileOut>> = (0..files.len()).map(|_| None).collect();
+    let sym_classes = analyze_ts(root, &tracked, &ts_files, &mut per, w, &mut st)?;
+    analyze_rust(root, &tracked, &rust_files, &mut per, w, &mut st)?;
+    tables.laws = bend_lane(root, &bend_files, &files, &mut per, w, &mut st)?;
+
+    // Function ids are global: files in id order, functions in start-offset order within a file.
+    // Each file's rows move into the writer and are freed before the next file.
+    let total_fns: usize = per.iter().flatten().map(|f| f.fns.fns.len()).sum();
+    let total_ct: usize = per.iter().flatten().map(|f| f.fns.ct.len()).sum();
+    w.reserve(Rel::Fn, total_fns);
+    w.reserve(Rel::Fk, total_fns);
+    w.reserve(Rel::Ct, total_ct);
+    w.push(Rel::M, &[total_fns as u32]);
+    tables.fns.reserve(total_fns);
+    push_sites(w, &per, &sym_classes, tables, &mut st);
+    let fn_keys = push_functions(w, per, tables, &mut st);
+    st.fns = total_fns;
+    for d in &st.degraded {
+        w.note(&format!("degraded {}: {}", d.lane, d.cause));
+    }
+    tables.paths = files.clone();
+    let prod = st.prod;
+    Ok((FactSet { files, prod, fn_keys }, st))
+}
+
+/// One id space: every existing file some lane owns and the policy allows, byte-sorted.
+fn list_files(root: &Path, tracked: &[String], lanes: &Lanes) -> Vec<String> {
     let mut files: Vec<String> = tracked
         .iter()
         .filter(|p| {
@@ -72,12 +108,16 @@ pub fn build(
         .collect();
     files.sort();
     files.dedup();
-    let ids = |owns: fn(&str) -> bool| -> Vec<(u32, String)> {
-        files.iter().enumerate().filter(|(_, p)| owns(p)).map(|(i, p)| (i as u32, p.clone())).collect()
-    };
-    let (ts_files, rust_files, bend_files) = (ids(lang::ts::owns), ids(lang::rust::owns), ids(lang::bend::owns));
+    files
+}
 
-    let mut st = Stats { files: files.len(), ts_files: ts_files.len(), rust_files: rust_files.len(), bend_files: bend_files.len(), ..Stats::default() };
+/// `(global file id, path)` for the files one lane owns.
+fn lane_files(files: &[String], owns: fn(&str) -> bool) -> Vec<(u32, String)> {
+    files.iter().enumerate().filter(|(_, p)| owns(p)).map(|(i, p)| (i as u32, p.clone())).collect()
+}
+
+/// `N`, `F` and `K` for every file.
+fn push_files(w: &mut FactWriter, files: &[String], st: &mut Stats) {
     w.push(Rel::N, &[files.len() as u32]);
     for (id, rel) in files.iter().enumerate() {
         let prod = is_prod(rel);
@@ -86,76 +126,91 @@ pub fn build(
         let k = stable_key(rel);
         w.push(Rel::K, &[id as u32, (k >> 32) as u32, (k & 0xffff_ffff) as u32]);
     }
+}
 
-    // Lanes run one after another: each already uses every core, and one lane's ASTs are gone
-    // before the next lane parses.
-    let mut per: Vec<Option<FileOut>> = (0..files.len()).map(|_| None).collect();
-    let mut sym_classes = std::collections::BTreeMap::new();
-    if !ts_files.is_empty() {
-        let a = lang::ts::analyze(root, &ts_files, &tracked)?;
-        st.fatal += a.stats.fatal;
-        st.unreadable += a.stats.unreadable;
-        push_edges(w, &a.i, &a.u, &mut st);
-        sym_classes = a.sym_classes;
-        for ((id, _), f) in ts_files.iter().zip(a.per_file) {
-            per[*id as usize] = Some(f);
-        }
+/// Run the TypeScript lane; returns the catalog classes of each symbol it saw.
+fn analyze_ts(
+    root: &Path,
+    tracked: &[String],
+    files: &[(u32, String)],
+    per: &mut [Option<FileOut>],
+    w: &mut FactWriter,
+    st: &mut Stats,
+) -> Result<std::collections::BTreeMap<String, Vec<u32>>, String> {
+    if files.is_empty() {
+        return Ok(Default::default());
     }
-    if !rust_files.is_empty() {
-        let a = lang::rust::analyze(root, &rust_files, &tracked)?;
-        st.fatal += a.stats.failed_parse;
-        if a.stats.metadata_fallbacks > 0 {
-            st.degraded.push(Degraded {
-                lane: "rust",
-                cause: format!(
-                    "cargo metadata failed for {} manifest(s) (missing toolchain or unresolvable workspace); the module graph uses the conventional layout, so use edges and cycles may be missing",
-                    a.stats.metadata_fallbacks
-                ),
-            });
-        }
-        push_edges(w, &a.i, &a.u, &mut st);
-        for ((id, _), f) in rust_files.iter().zip(a.per_file) {
-            per[*id as usize] = Some(FileOut { fns: f.fns, tests: f.tests });
-        }
+    let a = lang::ts::analyze(root, files, tracked)?;
+    st.fatal += a.stats.fatal;
+    st.unreadable += a.stats.unreadable;
+    push_edges(w, &a.i, &a.u, st);
+    for ((id, _), f) in files.iter().zip(a.per_file) {
+        per[*id as usize] = Some(f);
     }
-    tables.laws = bend_lane(root, &bend_files, &files, &mut per, w, &mut st)?;
+    Ok(a.sym_classes)
+}
 
-    // Function ids are global: files in id order, functions in start-offset order within a file.
-    // Each file's rows move into the writer and are freed before the next file.
-    let total_fns: usize = per.iter().flatten().map(|f| f.fns.fns.len()).sum();
-    let total_ct: usize = per.iter().flatten().map(|f| f.fns.ct.len()).sum();
-    w.reserve(Rel::Fn, total_fns);
-    w.reserve(Rel::Fk, total_fns);
-    w.reserve(Rel::Ct, total_ct);
-    w.push(Rel::M, &[total_fns as u32]);
-    tables.fns.reserve(total_fns);
-    let mut fn_keys = Vec::with_capacity(total_fns);
-    // Call sites and handlers: symbol ids are global and sorted by name, site ids run in
-    // (file, source) order, so they need every file's rows before any is consumed.
-    {
-        let mut bases = Vec::new();
-        let mut next = 0u32;
-        for f in per.iter().flatten() {
-            bases.push((next, &f.fns));
-            next += f.fns.fns.len() as u32;
-        }
-        let rows = crate::lang::functions::number_sites(&bases, &|s| sym_classes.get(s).cloned().unwrap_or_default());
-        drop(bases);
-        for id in 0..rows.syms.len() {
-            w.push(Rel::Sy, &[id as u32]);
-        }
-        for r in &rows.cl {
-            w.push(Rel::Cl, r);
-        }
-        for r in &rows.cs {
-            w.push(Rel::Cs, r);
-        }
-        for r in &rows.hd {
-            w.push(Rel::Hd, r);
-        }
-        st.sites = rows.cs.len() + rows.hd.len();
-        tables.syms = rows.syms;
+/// Run the Rust lane; a manifest cargo cannot read degrades the graph and is reported.
+fn analyze_rust(
+    root: &Path,
+    tracked: &[String],
+    files: &[(u32, String)],
+    per: &mut [Option<FileOut>],
+    w: &mut FactWriter,
+    st: &mut Stats,
+) -> Result<(), String> {
+    if files.is_empty() {
+        return Ok(());
     }
+    let a = lang::rust::analyze(root, files, tracked)?;
+    st.fatal += a.stats.failed_parse;
+    if a.stats.metadata_fallbacks > 0 {
+        st.degraded.push(Degraded {
+            lane: "rust",
+            cause: format!(
+                "cargo metadata failed for {} manifest(s) (missing toolchain or unresolvable workspace); the module graph uses the conventional layout, so use edges and cycles may be missing",
+                a.stats.metadata_fallbacks
+            ),
+        });
+    }
+    push_edges(w, &a.i, &a.u, st);
+    for ((id, _), f) in files.iter().zip(a.per_file) {
+        per[*id as usize] = Some(FileOut { fns: f.fns, tests: f.tests });
+    }
+    Ok(())
+}
+
+/// Call sites and handlers: symbol ids are global and sorted by name, site ids run in
+/// (file, source) order, so they need every file's rows before any is consumed.
+fn push_sites(
+    w: &mut FactWriter,
+    per: &[Option<FileOut>],
+    sym_classes: &std::collections::BTreeMap<String, Vec<u32>>,
+    tables: &mut SideTables,
+    st: &mut Stats,
+) {
+    let mut bases = Vec::new();
+    let mut next = 0u32;
+    for f in per.iter().flatten() {
+        bases.push((next, &f.fns));
+        next += f.fns.fns.len() as u32;
+    }
+    let rows = crate::lang::functions::number_sites(&bases, &|s| sym_classes.get(s).cloned().unwrap_or_default());
+    for id in 0..rows.syms.len() {
+        w.push(Rel::Sy, &[id as u32]);
+    }
+    rows.cl.iter().for_each(|r| w.push(Rel::Cl, r));
+    rows.cs.iter().for_each(|r| w.push(Rel::Cs, r));
+    rows.hd.iter().for_each(|r| w.push(Rel::Hd, r));
+    st.sites = rows.cs.len() + rows.hd.len();
+    tables.syms = rows.syms;
+}
+
+/// Function ids are global: files in id order, functions in start-offset order within a file.
+/// Each file's rows move into the writer and are freed before the next file. Returns the `FK`
+/// key of each function.
+fn push_functions(w: &mut FactWriter, mut per: Vec<Option<FileOut>>, tables: &mut SideTables, st: &mut Stats) -> Vec<u64> {
+    let mut fn_keys = Vec::new();
     let mut base = 0u32;
     for (file, slot) in per.iter_mut().enumerate() {
         let Some(FileOut { fns: FileFns { fns, mut ct, mut ops, .. }, tests }) = slot.take() else { continue };
@@ -191,13 +246,7 @@ pub fn build(
         }
         base += count;
     }
-    st.fns = total_fns;
-    for d in &st.degraded {
-        w.note(&format!("degraded {}: {}", d.lane, d.cause));
-    }
-    tables.paths = files.clone();
-    let prod = st.prod;
-    Ok((FactSet { files, prod, fn_keys }, st))
+    fn_keys
 }
 
 /// The Bend lane: its `I`/`U` rows and per-file functions, then `MK`/`L`/`LW`/`LN`, which name
