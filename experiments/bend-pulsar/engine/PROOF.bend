@@ -27,6 +27,7 @@ import ./Cognitive-PROOF.bend as CognitiveProof
 import ./Sql-PROOF.bend as SqlProof
 import ./Fanout-PROOF.bend as FanoutProof
 import ./Konst-PROOF.bend as KonstProof
+import ./SqlIn-PROOF.bend as SqlInProof
 import ./Rules-PROOF.bend as RulesProof
 
 def Laws.kind_is_value_kind(hv, ht, form):
