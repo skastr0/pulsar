@@ -51,6 +51,35 @@ pub fn owns(p: &str) -> bool {
         && !p.ends_with(".d.cts")
 }
 
+struct IEntry {
+    dst: u32,
+    form: u8,
+    hv: bool,
+    ht: bool,
+    pending: Vec<String>,
+}
+
+/// One file's extraction, before `export { a } from` specifiers are settled.
+struct PerFile {
+    i: Vec<IEntry>,
+    u: Vec<u8>,
+    fns: FileFns,
+    fatal: bool,
+    unreadable: bool,
+}
+
+/// One file's final edges, sorted and deduped, and its function rows.
+struct PerFileOut {
+    i: Vec<(u32, u8, u8, u8)>,
+    u: Vec<u8>,
+    fns: FileFns,
+    fatal: bool,
+    unreadable: bool,
+}
+
+/// Type-only-ness of `export { a } from` names, by target file then name.
+type Settled = std::collections::HashMap<u32, std::collections::HashMap<String, bool>>;
+
 /// Analyse the TypeScript files of a tree. `files` is `(global file id, repo-relative path)` for
 /// every file this lane owns; `tracked` is every tracked path (for workspace package discovery).
 pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Result<Analysis, String> {
@@ -58,29 +87,26 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
     let res = Resolution::new(root, &paths, tracked);
     let (index, catalogs) = builtin::index_for(root, tracked)?;
 
-    struct PerFileOut {
-        i: Vec<(u32, u8, u8, u8)>,
-        u: Vec<u8>,
-        fns: FileFns,
-        fatal: bool,
-        unreadable: bool,
-    }
-    struct IEntry {
-        dst: u32,
-        form: u8,
-        hv: bool,
-        ht: bool,
-        pending: Vec<String>,
-    }
-    struct PerFile {
-        i: Vec<IEntry>,
-        u: Vec<u8>,
-        fns: FileFns,
-        fatal: bool,
-        unreadable: bool,
-    }
+    let per = parse_files(root, &paths, &res, &index);
+    let settled = settle_reexports(root, &paths, &per);
+    let mut per = finish_files(per, &settled);
 
-    let mut per: Vec<PerFile> = paths
+    let mut st = Stats { files: files.len(), ..Stats::default() };
+    let (i_rows, u_rows) = edge_rows(files, &per, &mut st);
+    st.catalogs = catalogs;
+    let mut sym_classes = std::collections::BTreeMap::new();
+    for p in &per {
+        for name in &p.fns.syms {
+            sym_classes.entry(name.clone()).or_insert_with(|| index.classes(name));
+        }
+    }
+    let per_file = per.iter_mut().map(|p| FileOut { fns: std::mem::take(&mut p.fns), tests: Vec::new() }).collect();
+    Ok(Analysis { per_file, i: i_rows, u: u_rows, sym_classes, stats: st })
+}
+
+/// Parse every file in parallel, one AST at a time per thread, and resolve its imports.
+fn parse_files(root: &Path, paths: &[String], res: &Resolution, index: &calls::CatalogIndex) -> Vec<PerFile> {
+    paths
         .par_iter()
         .map_init(Allocator::default, |alloc, rel| {
             alloc.reset();
@@ -89,38 +115,30 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
                 return PerFile { i: vec![], u: vec![], fns: FileFns::default(), fatal: false, unreadable: true };
             };
             let text = String::from_utf8_lossy(&bytes);
-            let ex = extract(alloc, rel, &path, &text, &index, is_test(rel));
-            let mut i = Vec::new();
-            let mut u = Vec::new();
+            let ex = extract(alloc, rel, &path, &text, index, is_test(rel));
+            let (mut i, mut u) = (Vec::new(), Vec::new());
             for imp in ex.imports {
                 match res.resolve(rel, &imp.spec) {
-                    Resolved::File(dst) => i.push(IEntry {
-                        dst,
-                        form: imp.form,
-                        hv: imp.hv,
-                        ht: imp.ht,
-                        pending: imp.pending,
-                    }),
+                    Resolved::File(dst) => {
+                        i.push(IEntry { dst, form: imp.form, hv: imp.hv, ht: imp.ht, pending: imp.pending })
+                    }
                     Resolved::Unresolved(r) => u.push(r),
                 }
             }
             PerFile { i, u, fns: ex.functions, fatal: ex.fatal, unreadable: false }
         })
-        .collect();
+        .collect()
+}
 
-    // Pass 2: `export { a } from "./x"` is type-only per specifier when the target declares `a` as an
-    // interface/type alias (old Pulsar's rule). Re-parse only the targets that need the lookup.
+/// `export { a } from "./x"` is type-only per specifier when the target declares `a` as an
+/// interface/type alias (old Pulsar's rule). Re-parse only the targets that need the lookup.
+fn settle_reexports(root: &Path, paths: &[String], per: &[PerFile]) -> Settled {
     let mut wanted: std::collections::BTreeMap<u32, std::collections::BTreeSet<String>> = Default::default();
-    for p in &per {
-        for e in &p.i {
-            if !e.pending.is_empty() {
-                wanted.entry(e.dst).or_default().extend(e.pending.iter().cloned());
-            }
-        }
+    for e in per.iter().flat_map(|p| &p.i).filter(|e| !e.pending.is_empty()) {
+        wanted.entry(e.dst).or_default().extend(e.pending.iter().cloned());
     }
-    let targets: Vec<(u32, Vec<String>)> =
-        wanted.into_iter().map(|(d, n)| (d, n.into_iter().collect())).collect();
-    let settled: std::collections::HashMap<u32, std::collections::HashMap<String, bool>> = targets
+    let targets: Vec<(u32, Vec<String>)> = wanted.into_iter().map(|(d, n)| (d, n.into_iter().collect())).collect();
+    targets
         .par_iter()
         .map_init(Allocator::default, |alloc, (dst, names)| {
             alloc.reset();
@@ -132,10 +150,13 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
             };
             (*dst, names.iter().cloned().zip(flags).collect())
         })
-        .collect();
-    let mut per: Vec<_> = per
-        .iter_mut()
-        .map(|p| {
+        .collect()
+}
+
+/// Fold the settled specifiers into each import's `hv`/`ht`, then sort and dedup per file.
+fn finish_files(per: Vec<PerFile>, settled: &Settled) -> Vec<PerFileOut> {
+    per.into_iter()
+        .map(|mut p| {
             let mut i: Vec<(u32, u8, u8, u8)> = Vec::with_capacity(p.i.len());
             for e in p.i.drain(..) {
                 let (mut hv, mut ht) = (e.hv, e.ht);
@@ -152,11 +173,13 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
             i.dedup();
             p.u.sort_unstable();
             p.u.dedup();
-            PerFileOut { i, u: std::mem::take(&mut p.u), fns: std::mem::take(&mut p.fns), fatal: p.fatal, unreadable: p.unreadable }
+            PerFileOut { i, u: p.u, fns: p.fns, fatal: p.fatal, unreadable: p.unreadable }
         })
-        .collect();
+        .collect()
+}
 
-    let mut st = Stats { files: files.len(), ..Stats::default() };
+/// `I` and `U` rows over global file ids, sorted; counts go into `st`.
+fn edge_rows(files: &[(u32, String)], per: &[PerFileOut], st: &mut Stats) -> (Vec<[u32; 5]>, Vec<[u32; 2]>) {
     let mut i_rows: Vec<[u32; 5]> = Vec::new();
     let mut u_rows: Vec<[u32; 2]> = Vec::new();
     for (idx, p) in per.iter().enumerate() {
@@ -166,22 +189,12 @@ pub fn analyze(root: &Path, files: &[(u32, String)], tracked: &[String]) -> Resu
         for (dst, form, hv, ht) in &p.i {
             i_rows.push([src, files[*dst as usize].0, *form as u32, *hv as u32, *ht as u32]);
         }
-        for r in &p.u {
-            u_rows.push([src, *r as u32]);
-        }
+        u_rows.extend(p.u.iter().map(|r| [src, *r as u32]));
     }
     // Per-file lists are sorted and deduped; sorting globally keeps the same canonical order.
     i_rows.sort_unstable();
     u_rows.sort_unstable();
     st.i_facts = i_rows.len();
     st.u_facts = u_rows.len();
-    st.catalogs = catalogs;
-    let mut sym_classes = std::collections::BTreeMap::new();
-    for p in &per {
-        for name in &p.fns.syms {
-            sym_classes.entry(name.clone()).or_insert_with(|| index.classes(name));
-        }
-    }
-    let per_file = per.iter_mut().map(|p| FileOut { fns: std::mem::take(&mut p.fns), tests: Vec::new() }).collect();
-    Ok(Analysis { per_file, i: i_rows, u: u_rows, sym_classes, stats: st })
+    (i_rows, u_rows)
 }

@@ -59,6 +59,13 @@ impl Lines {
     fn line(&self, off: u32) -> u32 {
         self.starts.partition_point(|&s| s <= off) as u32
     }
+
+    /// First line, last line and non-blank line count of a span.
+    fn measure(&self, span: Span) -> (u32, u32, u32) {
+        let start = self.line(span.start);
+        let end = self.line(span.end.saturating_sub(1).max(span.start));
+        (start, end, self.nonblank[end as usize] - self.nonblank[start as usize - 1])
+    }
 }
 
 /// Hasher for keys that are already 64-bit hashes.
@@ -208,29 +215,15 @@ impl<'s> Walker<'s> {
     /// of the binding for `import { Effect } from "effect"`). Type-only imports are skipped.
     fn scan_imports(&mut self, program: &Program<'_>) {
         let Some(ix) = self.index else { return };
-        for stmt in &program.body {
-            let Statement::ImportDeclaration(d) = stmt else { continue };
-            if d.import_kind.is_type() {
-                continue;
-            }
-            let Some(specs) = &d.specifiers else { continue };
+        let decls = program.body.iter().filter_map(|s| match s {
+            Statement::ImportDeclaration(d) if !d.import_kind.is_type() => Some(d),
+            _ => None,
+        });
+        for d in decls {
             let base = ix.module_base(&d.source.value.display().to_string());
-            for sp in specs {
-                let (name, sid) = match sp {
-                    ImportDeclarationSpecifier::ImportSpecifier(i) if i.import_kind.is_type() => continue,
-                    ImportDeclarationSpecifier::ImportSpecifier(i) => {
-                        (Some(i.imported.name().to_string()), i.local.symbol_id.get())
-                    }
-                    ImportDeclarationSpecifier::ImportDefaultSpecifier(i) => {
-                        (Some("default".to_string()), i.local.symbol_id.get())
-                    }
-                    ImportDeclarationSpecifier::ImportNamespaceSpecifier(i) => (None, i.local.symbol_id.get()),
-                };
-                if let Some(sid) = sid {
-                    let sym = match name {
-                        Some(n) => join(&base, &n),
-                        None => base.clone(),
-                    };
+            for sp in d.specifiers.iter().flatten() {
+                if let Some((sid, member)) = import_binding(sp) {
+                    let sym = member.map_or_else(|| base.clone(), |m| join(&base, &m));
                     self.imports.insert(sid, sym);
                 }
             }
@@ -321,43 +314,45 @@ impl<'s> Walker<'s> {
         }
     }
 
-    /// Register a function and make it the current one. Returns false for nothing to undo.
+    /// Register a function and make it the current one.
     fn enter(&mut self, span: Span, own: Option<&str>, default_kind: u8, is_async: bool) {
         let pend = self.take_pending(span.start);
         let kind = pend.as_ref().and_then(|p| p.kind).unwrap_or(default_kind);
-        let name: Option<String> = match own {
-            Some(n) => Some(n.to_string()),
-            None => pend.map(|p| p.name),
-        };
-        let (element, ordinal, anonymous) = match &name {
-            Some(n) => (n.clone(), self.ordinal(n.as_bytes(), kind, false), false),
-            None => {
-                let ord = self.ordinal(b"", kind, true);
-                (format!("#{ord}"), ord, true)
-            }
-        };
-        let chain = if self.prefix.is_empty() {
-            element.clone()
-        } else {
-            format!("{}>{element}", self.prefix)
-        };
-        let mut digits = [0u8; 10];
-        let key_name: &[u8] = if anonymous { b"" } else { element.as_bytes() };
-        let key = fnv_parts(&[
-            self.rel.as_bytes(),
-            &self.key_prefix,
-            key_name,
-            &[kind],
-            dec(ordinal, &mut digits),
-        ]);
-        let start_line = self.lines.line(span.start);
-        let end_line = self.lines.line(span.end.saturating_sub(1).max(span.start));
-        let loc = self.lines.nonblank[end_line as usize] - self.lines.nonblank[start_line as usize - 1];
+        let name = own.map(str::to_string).or_else(|| pend.map(|p| p.name));
+        let (element, ordinal, anonymous) = self.element_of(name.as_deref(), kind);
+        let chain = if self.prefix.is_empty() { element.clone() } else { format!("{}>{element}", self.prefix) };
+        let key = self.fn_key(&element, anonymous, kind, ordinal);
+        let (start_line, end_line, loc) = self.lines.measure(span);
         let parent = self.frames.last().map(|f| f.local);
         // The boundary marker belongs to the parent's tree.
         self.leaf(ct::NESTED_FN);
         let local = self.out.fns.len() as u32;
         self.out.fns.push(FnRec { start_line, end_line, parent, loc, kind, chain, key });
+        let frame_ctx = self.frame_ctx(span.start, is_async);
+        self.frames.push(Frame { local, next_node: 1, ctx: frame_ctx, loops: 0, stack: vec![0] });
+        self.push_container(&element);
+    }
+
+    /// The chain element of a function, its ordinal, and whether it is anonymous.
+    fn element_of(&mut self, name: Option<&str>, kind: u8) -> (String, u32, bool) {
+        match name {
+            Some(n) => (n.to_string(), self.ordinal(n.as_bytes(), kind, false), false),
+            None => {
+                let ord = self.ordinal(b"", kind, true);
+                (format!("#{ord}"), ord, true)
+            }
+        }
+    }
+
+    fn fn_key(&self, element: &str, anonymous: bool, kind: u8, ordinal: u32) -> u64 {
+        let mut digits = [0u8; 10];
+        let key_name: &[u8] = if anonymous { b"" } else { element.as_bytes() };
+        fnv_parts(&[self.rel.as_bytes(), &self.key_prefix, key_name, &[kind], dec(ordinal, &mut digits)])
+    }
+
+    /// `CS.ctx` bits for a function: the enclosing function's, the test-file bit at the top,
+    /// its own async, and any wrapper call's bits for the function starting at `start`.
+    fn frame_ctx(&mut self, start: u32, is_async: bool) -> u8 {
         let inherited = match self.frames.last() {
             Some(f) => f.ctx,
             None if self.test_file => ctx::TEST,
@@ -366,11 +361,9 @@ impl<'s> Walker<'s> {
         let wrapped = self
             .pending_ctx
             .iter()
-            .position(|p| p.0 == span.start)
+            .position(|p| p.0 == start)
             .map_or(0, |i| self.pending_ctx.swap_remove(i).1);
-        let own_ctx = if is_async { ctx::ASYNC } else { 0 };
-        self.frames.push(Frame { local, next_node: 1, ctx: inherited | own_ctx | wrapped, loops: 0, stack: vec![0] });
-        self.push_container(&element);
+        inherited | wrapped | if is_async { ctx::ASYNC } else { 0 }
     }
 
     fn leave(&mut self) {
@@ -563,31 +556,35 @@ impl<'s> Walker<'s> {
     }
 
     fn handler_args(&mut self, args: &[Argument<'_>], arg: Arg) {
-        match arg {
-            Arg::LastFn => {
-                if let Some(e) = args.iter().rev().find_map(|a| self.function_arg(a)) {
-                    let sh = self.fn_shape(e);
-                    self.handler_site(sh);
-                }
-            }
-            Arg::ObjectFns => {
-                for a in args {
-                    let Some(Expression::ObjectExpression(o)) = a.as_expression().map(|e| e.get_inner_expression())
-                    else {
-                        continue;
-                    };
-                    for p in &o.properties {
-                        if let ObjectPropertyKind::ObjectProperty(p) = p {
-                            let v = p.value.get_inner_expression();
-                            if matches!(v, Expression::FunctionExpression(_) | Expression::ArrowFunctionExpression(_)) {
-                                let sh = self.fn_shape(v);
-                                self.handler_site(sh);
-                            }
-                        }
-                    }
-                }
-            }
+        let shapes: Vec<u8> = match arg {
+            Arg::LastFn => args
+                .iter()
+                .rev()
+                .find_map(|a| self.function_arg(a))
+                .map(|e| self.fn_shape(e))
+                .into_iter()
+                .collect(),
+            Arg::ObjectFns => args.iter().flat_map(|a| self.object_fn_shapes(a)).collect(),
+        };
+        for sh in shapes {
+            self.handler_site(sh);
         }
+    }
+
+    /// Shapes of the function-valued properties of an object-literal argument (`catchTags`).
+    fn object_fn_shapes(&self, a: &Argument<'_>) -> Vec<u8> {
+        let Some(Expression::ObjectExpression(o)) = a.as_expression().map(|e| e.get_inner_expression()) else {
+            return Vec::new();
+        };
+        o.properties
+            .iter()
+            .filter_map(|p| match p {
+                ObjectPropertyKind::ObjectProperty(p) => Some(p.value.get_inner_expression()),
+                _ => None,
+            })
+            .filter(|v| matches!(v, Expression::FunctionExpression(_) | Expression::ArrowFunctionExpression(_)))
+            .map(|v| self.fn_shape(v))
+            .collect()
     }
 
     fn fn_shape(&self, e: &Expression<'_>) -> u8 {
@@ -711,52 +708,72 @@ impl<'s> Walker<'s> {
     }
 
     fn on_call(&mut self, it: &CallExpression<'_>) {
-        let Some(ix) = self.index else { return };
-        // `.catch(cb)` on anything: a promise rejection handler.
-        if let Expression::StaticMemberExpression(m) = it.callee.get_inner_expression() {
-            if m.property.name == "catch" {
-                if let Some(e) = it.arguments.iter().rev().find_map(|a| self.function_arg(a)) {
-                    let sh = self.fn_shape(e);
-                    self.handler_site(sh);
-                }
-            }
+        if self.index.is_none() {
+            return;
         }
+        self.promise_catch(it);
         match it.callee.get_inner_expression() {
-            // `S(...)(...)`: a wrapper applied in two steps, or the result of S called at once.
-            Expression::CallExpression(inner) => {
-                if let Some(sym) = self.sym_of(&inner.callee) {
-                    if let Some(w) = ix.wrapper(&sym) {
-                        self.wrap_args(&it.arguments, w.ctx);
-                    }
-                    let immediate = ix.entries(&sym).iter().any(|e| e.via == Via::Result && e.use_ == Use::Call);
-                    if immediate {
-                        self.call_site(&sym);
-                    }
-                }
-            }
-            callee => {
-                let Some(c) = self.chain(callee) else { return };
-                match self.resolve(&c) {
-                    Target::Sym(sym) => {
-                        if self.has_via(&sym, Via::Call) {
-                            self.call_site(&sym);
-                        }
-                        if let Some(w) = ix.wrapper(&sym) {
-                            self.wrap_args(&it.arguments, w.ctx);
-                        }
-                        if let Some(arg) = ix.handler(&sym) {
-                            self.handler_args(&it.arguments, arg);
-                        }
-                    }
-                    Target::Bound(sid) => {
-                        if let Some(sym) = self.bound_use(sid, &c.path, false) {
-                            self.call_site(&sym);
-                        }
-                    }
-                    Target::None => {}
-                }
-            }
+            Expression::CallExpression(inner) => self.on_applied_call(inner, it),
+            callee => self.on_named_call(callee, it),
         }
+    }
+
+    /// `.catch(cb)` on anything: a promise rejection handler.
+    fn promise_catch(&mut self, it: &CallExpression<'_>) {
+        let Expression::StaticMemberExpression(m) = it.callee.get_inner_expression() else { return };
+        if m.property.name != "catch" {
+            return;
+        }
+        let shape = it.arguments.iter().rev().find_map(|a| self.function_arg(a)).map(|e| self.fn_shape(e));
+        if let Some(sh) = shape {
+            self.handler_site(sh);
+        }
+    }
+
+    /// `S(...)(...)`: a wrapper applied in two steps, or the result of S called at once.
+    fn on_applied_call(&mut self, inner: &CallExpression<'_>, it: &CallExpression<'_>) {
+        let (Some(ix), Some(sym)) = (self.index, self.sym_of(&inner.callee)) else { return };
+        if let Some(w) = ix.wrapper(&sym) {
+            self.wrap_args(&it.arguments, w.ctx);
+        }
+        if ix.entries(&sym).iter().any(|e| e.via == Via::Result && e.use_ == Use::Call) {
+            self.call_site(&sym);
+        }
+    }
+
+    /// A call whose callee is an `ident.a.b` chain: a catalog symbol, or a bound value's method.
+    fn on_named_call(&mut self, callee: &Expression<'_>, it: &CallExpression<'_>) {
+        let Some(c) = self.chain(callee) else { return };
+        match self.resolve(&c) {
+            Target::Sym(sym) => self.on_symbol_call(&sym, it),
+            Target::Bound(sid) => {
+                if let Some(sym) = self.bound_use(sid, &c.path, false) {
+                    self.call_site(&sym);
+                }
+            }
+            Target::None => {}
+        }
+    }
+
+    fn on_symbol_call(&mut self, sym: &str, it: &CallExpression<'_>) {
+        let Some(ix) = self.index else { return };
+        if self.has_via(sym, Via::Call) {
+            self.call_site(sym);
+        }
+        if let Some(w) = ix.wrapper(sym) {
+            self.wrap_args(&it.arguments, w.ctx);
+        }
+        if let Some(arg) = ix.handler(sym) {
+            self.handler_args(&it.arguments, arg);
+        }
+    }
+
+    /// The catalog symbol a tagged template's tag stands for, when the tag is a bound value.
+    fn tag_use(&self, tag: &Expression<'_>) -> Option<String> {
+        self.index?;
+        let c = self.chain(tag)?;
+        let Target::Bound(sid) = self.resolve(&c) else { return None };
+        self.bound_use(sid, &c.path, true)
     }
 
     /// `ref` and `read` events on a maximal chain: the longest prefix the catalog knows.
@@ -786,6 +803,20 @@ impl<'s> Walker<'s> {
             }
             _ => {}
         }
+    }
+}
+
+/// The symbol and imported member (`None` for a namespace import) of a value import specifier.
+fn import_binding(sp: &ImportDeclarationSpecifier<'_>) -> Option<(SymbolId, Option<String>)> {
+    match sp {
+        ImportDeclarationSpecifier::ImportSpecifier(i) if i.import_kind.is_type() => None,
+        ImportDeclarationSpecifier::ImportSpecifier(i) => {
+            Some((i.local.symbol_id.get()?, Some(i.imported.name().to_string())))
+        }
+        ImportDeclarationSpecifier::ImportDefaultSpecifier(i) => {
+            Some((i.local.symbol_id.get()?, Some("default".to_string())))
+        }
+        ImportDeclarationSpecifier::ImportNamespaceSpecifier(i) => Some((i.local.symbol_id.get()?, None)),
     }
 }
 
@@ -1084,14 +1115,8 @@ impl<'a> Visit<'a> for Walker<'_> {
     }
 
     fn visit_tagged_template_expression(&mut self, it: &TaggedTemplateExpression<'a>) {
-        if self.index.is_some() {
-            if let Some(c) = self.chain(&it.tag) {
-                if let Target::Bound(sid) = self.resolve(&c) {
-                    if let Some(sym) = self.bound_use(sid, &c.path, true) {
-                        self.call_site(&sym);
-                    }
-                }
-            }
+        if let Some(sym) = self.tag_use(&it.tag) {
+            self.call_site(&sym);
         }
         walk::walk_tagged_template_expression(self, it);
     }
