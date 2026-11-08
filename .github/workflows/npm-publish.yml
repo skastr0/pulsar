@@ -1,0 +1,178 @@
+name: Publish npm packages
+
+# Builds the release binaries from a v* tag and publishes @skastr0/pulsar-darwin-arm64,
+# @skastr0/pulsar-linux-x64 and the @skastr0/pulsar launcher, through npm trusted publishing
+# (OIDC, the `release` environment; no token). The steps are the ones in
+# experiments/bend-pulsar/packaging/README.md: the engine C comes from the pinned Bend after the
+# proof gate passes, and stage-npm.sh checks versions, notices and binaries before anything is
+# published. A version already on npm is skipped, so a rerun is safe.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to publish (vX.Y.Z)
+        required: true
+        type: string
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+env:
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  BEND: 2.0.40
+  BEND_SHA_LINUX_X64: c9ff8d67bd903fb6ad9a26b43d8a62c01021de82a44d55ce4a3dcd4732113d6b
+  LEAN: v4.34.0
+  BEND_NO_TELEMETRY: 1
+
+concurrency:
+  group: npm-publish-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  engine:
+    name: Proof gate, engine C and linux-x64 engine
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+      - name: The tag is the CLI version
+        run: |
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' experiments/bend-pulsar/cli/Cargo.toml | head -1)
+          [ "$RELEASE_TAG" = "v$v" ] || { echo "tag $RELEASE_TAG, cli/Cargo.toml says $v"; exit 1; }
+      - name: Bend (pinned in packaging/bend-version, sha256-checked)
+        run: |
+          [ "$(tr -d '[:space:]' < experiments/bend-pulsar/packaging/bend-version)" = "$BEND" ]
+          name=bend-$BEND-linux-x64.tar.gz
+          curl -fsSL -o "$RUNNER_TEMP/$name" "https://github.com/bendlang/bend/releases/download/v$BEND/$name"
+          echo "$BEND_SHA_LINUX_X64  $RUNNER_TEMP/$name" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$name" -C "$RUNNER_TEMP"
+          mkdir -p ~/.bend/bin
+          mv "$RUNNER_TEMP/bend/bend2" "$RUNNER_TEMP/bend/guide" ~/.bend/
+          mv "$RUNNER_TEMP/bend/bin/bend" ~/.bend/bin/bend
+          echo "$HOME/.bend/bin" >> "$GITHUB_PATH"
+      - name: Lean (for --verdict)
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --no-modify-path --default-toolchain "leanprover/lean4:$LEAN"
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: No @unsafe or ?TODO in the engine
+        working-directory: experiments/bend-pulsar/engine
+        run: "! grep -lE '@unsafe|\\?TODO' *.bend"
+      - name: Proof gate
+        working-directory: experiments/bend-pulsar/engine
+        run: bend PROOF.bend --verdict
+      - uses: docker/setup-qemu-action@v3   # build-engine.sh builds its amd64 and arm64 builder images
+      - name: Engine C and the static linux-x64 engine, fixtures run in the builder
+        run: bash experiments/bend-pulsar/packaging/build-engine.sh --targets linux-x64 --test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine
+          path: |
+            experiments/bend-pulsar/dist/engine/pulsar-engine.c
+            experiments/bend-pulsar/dist/engine/MANIFEST
+            experiments/bend-pulsar/dist/engine/linux-x64/pulsar-engine
+          if-no-files-found: error
+
+  darwin-arm64:
+    name: darwin-arm64 CLI and engine
+    needs: engine
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: engine
+          path: engine-artifact
+      - name: Engine from the gated C
+        run: |
+          out=$PWD/darwin-arm64
+          mkdir -p "$out"
+          clang -O2 -target arm64-apple-macos11 -o "$out/pulsar-engine" engine-artifact/pulsar-engine.c
+          strip "$out/pulsar-engine"
+          printf '%s %s %s %s\n' darwin-arm64 "$(shasum -a 256 "$out/pulsar-engine" | cut -d' ' -f1)" \
+            "$(wc -c < "$out/pulsar-engine" | tr -d ' ')" "$(clang --version | head -1)" > "$out/MANIFEST.line"
+          ENGINE="$out/pulsar-engine" bash experiments/bend-pulsar/engine/test.sh | tail -1
+      - uses: dtolnay/rust-toolchain@stable
+      - name: CLI
+        working-directory: experiments/bend-pulsar/cli
+        run: |
+          cargo build --release --locked
+          cp target/release/pulsar "$GITHUB_WORKSPACE/darwin-arm64/pulsar"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: darwin-arm64
+          path: darwin-arm64
+          if-no-files-found: error
+
+  cli-linux-x64:
+    name: linux-x64 CLI (static musl)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+      - run: mkdir -p ~/.cargo/registry && bash experiments/bend-pulsar/packaging/build-cli-linux.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-linux-x64
+          path: experiments/bend-pulsar/dist/cli/linux-x64/pulsar
+          if-no-files-found: error
+
+  publish:
+    name: Stage and publish
+    needs: [engine, darwin-arm64, cli-linux-x64]
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: npm with trusted publishing
+        run: npm install -g npm@11.6.2 && npm --version
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Engine directory with both targets in its MANIFEST
+        run: |
+          e=experiments/bend-pulsar/dist/engine
+          mkdir -p "$e/darwin-arm64" "$e/linux-x64"
+          cp artifacts/engine/pulsar-engine.c "$e/"
+          cp artifacts/engine/linux-x64/pulsar-engine "$e/linux-x64/"
+          cp artifacts/darwin-arm64/pulsar-engine "$e/darwin-arm64/"
+          { head -2 artifacts/engine/MANIFEST; cat artifacts/darwin-arm64/MANIFEST.line; tail -n +3 artifacts/engine/MANIFEST; } > "$e/MANIFEST"
+          chmod +x "$e"/*/pulsar-engine artifacts/darwin-arm64/pulsar artifacts/cli-linux-x64/pulsar
+          cat "$e/MANIFEST"
+      - name: Stage (versions, notices, binary platforms, pack)
+        run: |
+          bash experiments/bend-pulsar/packaging/stage-npm.sh \
+            --cli-darwin-arm64 artifacts/darwin-arm64/pulsar \
+            --cli-linux-x64 artifacts/cli-linux-x64/pulsar \
+            --engine experiments/bend-pulsar/dist/engine --pack
+      - name: Publish, platform packages before the launcher
+        run: |
+          set -euo pipefail
+          for p in pulsar-darwin-arm64 pulsar-linux-x64 pulsar; do
+            dir=experiments/bend-pulsar/dist/npm/$p
+            name=$(node -p "require('./$dir/package.json').name")
+            version=$(node -p "require('./$dir/package.json').version")
+            if npm view "$name@$version" version --prefer-online >/dev/null 2>&1; then
+              echo "Skipping $name@$version; already published"
+              continue
+            fi
+            echo "Publishing $name@$version"
+            npm publish "./$dir" --access public --provenance
+          done
