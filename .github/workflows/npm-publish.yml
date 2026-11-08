@@ -67,7 +67,8 @@ jobs:
         run: bend PROOF.bend --verdict
       - uses: docker/setup-qemu-action@v3   # build-engine.sh builds its amd64 and arm64 builder images
       - name: Engine C and the static linux-x64 engine, fixtures run in the builder
-        run: bash experiments/bend-pulsar/packaging/build-engine.sh --targets linux-x64 --test
+        # build-engine.sh reads BEND as the path to the binary; the workflow's BEND is the version
+        run: BEND=$HOME/.bend/bin/bend bash experiments/bend-pulsar/packaging/build-engine.sh --targets linux-x64 --test
       - uses: actions/upload-artifact@v4
         with:
           name: engine
