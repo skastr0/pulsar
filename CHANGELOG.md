@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on Keep a Changelog, and this project follows Semantic Versioning for its declared public API.
 
-## [0.4.0] - unreleased
+## [0.4.0] - 2026-11-08
 
 A rewrite. Pulsar 0.4.0 is a Rust CLI plus an engine written in Bend and compiled to native code. It reports named findings with file, symbol and evidence for a git sha, and what a change added or removed between two shas. There are no scores, weights, grades or readiness bands. The 0.3.0 commands, packs, vectors and scoring are removed; nothing is kept for compatibility.
 
